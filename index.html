@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOTIONIC - Feel Motion</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
+body{background:#0a0a12;color:white;overflow-x:hidden}
+nav{display:flex;justify-content:space-between;padding:20px 24px;position:fixed;width:100%;z-index:10;backdrop-filter:blur(10px)}
+.logo{font-weight:900;letter-spacing:2px;font-size:22px}
+.logo span{color:#a78bfa}
+.btn{background:white;color:black;padding:10px 18px;border-radius:999px;font-weight:700;border:none;cursor:pointer}
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:24px;text-align:center;background:radial-gradient(600px 300px at var(--x,50%) var(--y,30%),#7c3aed55,transparent)}
+.hero h1{font-size:clamp(48px,12vw,110px);line-height:0.9;font-weight:900;letter-spacing:-3px}
+.hero h1 i{color:#a78bfa;font-style:normal}
+.hero p{opacity:.7;margin:18px auto;max-width:520px;font-size:18px}
+.pill{display:inline-block;background:#1e1e2e;border:1px solid #333;padding:8px 14px;border-radius:999px;font-size:13px;margin:4px}
+.playground{padding:40px 20px;max-width:900px;margin:auto}
+.card{background:#15151f;border:1px solid #2a2a3a;border-radius:24px;padding:24px;margin-top:20px;transition:transform .3s}
+.card:hover{transform:translateY(-6px) rotate(-0.5deg)}
+.track{height:120px;background:#0a0a12;border-radius:16px;position:relative;overflow:hidden;margin:20px 0;border:1px dashed #333}
+#ball{width:56px;height:56px;background:linear-gradient(135deg,#a78bfa,#ec4899);border-radius:50%;position:absolute;top:32px;left:10px;display:grid;place-items:center;font-size:26px;box-shadow:0 10px 30px #a78bfa66}
+.controls{display:flex;flex-wrap:wrap;gap:10px}
+select,input{padding:12px;border-radius:12px;background:#0a0a12;color:white;border:1px solid #333;flex:1}
+.marquee{white-space:nowrap;overflow:hidden;padding:20px 0;border-top:1px solid #222;border-bottom:1px solid #222;margin:40px 0}
+.marquee span{display:inline-block;animation:scroll 12s linear infinite;font-size:28px;font-weight:800;padding-right:20px}
+@keyframes scroll{to{transform:translateX(-50%)}}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+.mini{padding:20px;border-radius:20px;background:#1c1c2a;border:1px solid #2a2a3a}
+.mini b{font-size:28px}
+footer{text-align:center;padding:40px;opacity:.5}
+</style>
+</head>
+<body>
+<nav><div class="logo">MOTION<span>IC</span></div><button class="btn" onclick="play()">▶ Play Motion</button></nav>
+
+<div class="hero" id="hero">
+<div><span class="pill">✦ CLEVER MOTION</span><span class="pill">NO LIBRARY • JUST CSS + JS</span></div>
+<h1>MOTION<br><i>THAT FEELS</i><br>ALIVE.</h1>
+<p>Move your mouse. Click play. Change the easing. This is not just animation — this is feeling.</p>
+<div><button class="btn" onclick="play()">Try it ↓</button></div>
+</div>
+
+<div class="marquee"><span>MOTIONIC • EASE-IN • BOUNCE • SPRING • SMOOTH • PLAYFUL • MOTIONIC • EASE-IN • BOUNCE • SPRING • SMOOTH • PLAYFUL • </span></div>
+
+<div class="playground">
+<h2 style="font-size:36px">Easing Playground 🎢</h2>
+<p style="opacity:.7;margin-top:8px">The secret of Apple, Google, Netflix — it's not what moves, it's HOW it moves.</p>
+
+<div class="card">
+<div class="track"><div id="ball">✦</div></div>
+<div class="controls">
+<select id="ease">
+<option value="linear">linear - robot</option>
+<option value="ease-in">ease-in - slow start</option>
+<option value="ease-out" selected>ease-out - smooth stop</option>
+<option value="ease-in-out">ease-in-out - luxury</option>
+<option value="cubic-bezier(.68,-0.55,.27,1.55)">springy - playful</option>
+<option value="cubic-bezier(.17,.67,.35,1.5)">bounce - fun</option>
+</select>
+<input type="range" id="dur" min="300" max="2000" value="900"><span id="durLabel">900ms</span>
+<button class="btn" onclick="play()">▶ Run</button>
+</div>
+<p id="code" style="margin-top:14px;background:#000;padding:12px;border-radius:12px;font-family:monospace">transition: left 900ms ease-out;</p>
+</div>
+
+<div class="grid">
+<div class="mini"><b>⚡ Fast</b><p style="opacity:.7">Linear feels fast but cheap. Good for loading bars.</p></div>
+<div class="mini"><b>🧈 Smooth</b><p style="opacity:.7">Ease-out feels premium. Apple uses this everywhere.</p></div>
+<div class="mini"><b>🏀 Bouncy</b><p style="opacity:.7">Spring feels playful. Good for games & kids apps.</p></div>
+<div class="mini"><b>💎 Luxury</b><p style="opacity:.7">Ease-in-out feels expensive. Good for hero sections.</p></div>
+</div>
+</div>
+
+<footer>Built by you • MOTIONIC • Move your mouse on this page</footer>
+
+<script>
+const ball=document.getElementById('ball');
+const hero=document.getElementById('hero');
+const dur=document.getElementById('dur');
+const durLabel=document.getElementById('durLabel');
+const ease=document.getElementById('ease');
+const code=document.getElementById('code');
+dur.oninput=()=>{durLabel.textContent=dur.value+'ms'; updateCode()}
+ease.onchange=updateCode
+function updateCode(){code.textContent=`transition: left ${dur.value}ms ${ease.value};`}
+function play(){
+  ball.style.transition='none';
+  ball.style.left='10px';
+  setTimeout(()=>{
+    ball.style.transition=`left ${dur.value}ms ${ease.value}`;
+    ball.style.left='calc(100% - 66px)';
+  },50);
+}
+document.addEventListener('mousemove',e=>{
+  hero.style.setProperty('--x', (e.clientX/window.innerWidth*100)+'%');
+  hero.style.setProperty('--y', (e.clientY/window.innerHeight*100)+'%');
+});
+updateCode(); play();
+</script>
+</body>
+</html>
