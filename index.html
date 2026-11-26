@@ -1,29 +1,2260 @@
-<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{margin:0;background:#020617;color:#fff;font-family:Arial;overflow:hidden;text-align:center}h1{margin:14px 0 2px;font-size:22px}h1 span{color:#38bdf8}p{font-size:12px;color:#94a3b8}#box{background:#0f172a;margin:10px;padding:14px;border-radius:14px}canvas{background:#020617}</style></head>
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Interactive 3D World Globe & Capitals</title>
+  <!-- Tailwind CSS for responsive, sleek dark-space UI -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- Globe.gl (built on Three.js) & TopoJSON client for crisp 3D country polygons and markers -->
+  <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/topojson-client@3"></script>
+  <script src="https://unpkg.com/globe.gl"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: 'Inter', sans-serif;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+      background-color: #030712;
+      color: #f8fafc;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Fullscreen WebGL Globe Container with strict touch-action: none for native gesture control */
+    #globe-container {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      touch-action: none;
+      background: radial-gradient(circle at 50% 45%, #0f172a 0%, #030712 75%, #000000 100%);
+    }
+
+    #globe-container canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+      touch-action: none;
+      outline: none;
+    }
+
+    /* Glassmorphism panels */
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Custom subtle scrollbar for search dropdown */
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.4);
+      border-radius: 8px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.45);
+      border-radius: 8px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgba(56, 189, 248, 0.75);
+    }
+
+    /* Floating HTML Capital Marker Styling (GPU-accelerated compositing) */
+    .capital-pin {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transform: translate3d(-50%, -50%, 0);
+      will-change: transform;
+      transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+      pointer-events: auto;
+      touch-action: manipulation;
+    }
+
+    .capital-pin:hover {
+      transform: translate3d(-50%, -50%, 0) scale(1.2);
+      z-index: 50;
+    }
+
+    .capital-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 9999px;
+      background: #fbbf24;
+      border: 1.5px solid #ffffff;
+      box-shadow: 0 0 6px #f59e0b;
+      flex-shrink: 0;
+    }
+
+    .capital-dot.selected {
+      width: 11px;
+      height: 11px;
+      background: #38bdf8;
+      box-shadow: 0 0 10px #38bdf8, 0 0 18px #0284c7;
+    }
+
+    .capital-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: #fef3c7;
+      background: rgba(2, 6, 23, 0.78);
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      white-space: nowrap;
+      letter-spacing: 0.01em;
+    }
+
+    .capital-label.selected {
+      color: #e0f2fe;
+      border-color: rgba(56, 189, 248, 0.75);
+      background: rgba(12, 74, 110, 0.9);
+      font-size: 11px;
+    }
+
+    /* Zoom-responsive label clarity via container class (avoids touching 197 DOM nodes on zoom) */
+    #globe-container.zoomed-out .capital-pin:not(.is-selected):not(:hover) .capital-label {
+      display: none;
+    }
+
+    /* Disable pin pointer interception mid-drag so flicking never snags on labels */
+    #globe-container.is-dragging .capital-pin {
+      pointer-events: none !important;
+    }
+
+    /* Pulse animation for loading spinner */
+    @keyframes spinSlow {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      animation: spinSlow 1s linear infinite;
+    }
+  </style>
+</head>
 <body>
-<h1>WORLD <span>GLOBE</span></h1><p>Drag to spin • Tap a dot</p>
-<canvas id="c" width="360" height="360"></canvas>
-<div id="box"><b id="city">👆 Drag the globe</b><div id="desc" style="font-size:13px;color:#cbd5e1">Tap yellow dot = capital</div></div>
-<script>
-c=document.getElementById('c');x=c.getContext('2d');
-caps=[["Colombo","Sri Lanka",6.9,79.8],["New Delhi","India",28.6,77.2],["Tokyo","Japan",35.6,139.6],["London","UK",51.5,0],["Paris","France",48.8,2.3],["New York / Washington","USA",38.9,-77],["Beijing","China",39.9,116.4],["Cairo","Egypt",30,31.2],["Sydney / Canberra","Australia",-35.2,149.1],["Moscow","Russia",55.7,37.6]];
-let rot=0,drag=false,lx=0,sel=null;
-c.onpointerdown=e=>{drag=true;lx=e.clientX;};
-onpointermove=e=>{if(drag)rot+=(e.clientX-lx)*0.01;lx=e.clientX;};
-onpointerup=()=>drag=false;
-c.onclick=e=>{
- let r=c.getBoundingClientRect(),mx=e.clientX-r.left-180,my=e.clientY-r.top-180;
- caps.forEach(cap=>{let lon=(cap[3]+rot*57)*Math.PI/180,lat=cap[2]*Math.PI/180;
- let px=Math.cos(lat)*Math.sin(lon)*140,py=-Math.sin(lat)*140;
- if(Math.hypot(mx-px,my-py)<18){sel=cap;document.getElementById('city').textContent="📍 "+cap[0];document.getElementById('desc').textContent="Capital of "+cap[1];}});
-};
-function f(){x.clearRect(0,0,360,360);x.strokeStyle="#38bdf8";x.lineWidth=1;
- x.beginPath();x.arc(180,180,140,0,7);x.stroke();
- for(let i=-60;i<=60;i+=30){x.beginPath();x.ellipse(180,180,140,140*Math.cos(i*Math.PI/180)*0.9+10,0,0,7);x.stroke();}
- caps.forEach(cap=>{
-  let lon=(cap[3]+rot*57)*Math.PI/180,lat=cap[2]*Math.PI/180;
-  let px=180+Math.cos(lat)*Math.sin(lon)*140,py=180-Math.sin(lat)*140;
-  let front=Math.cos(lat)*Math.cos(lon)>0;
-  if(front){x.fillStyle=cap[1]=="Sri Lanka"?"#22ff88":"#facc15";x.beginPath();x.arc(px,py,6,0,7);x.fill();}});
- if(!drag)rot+=0.002;requestAnimationFrame(f);}f();
-</script></body></html>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/95 transition-opacity duration-500">
+    <div class="w-12 h-12 rounded-full border-4 border-sky-500/30 border-t-sky-400 spinner mb-4"></div>
+    <h2 class="text-lg font-semibold text-slate-100 tracking-wide">Loading World Atlas & All 197 Capitals...</h2>
+    <p id="loading-status" class="text-xs text-slate-400 mt-1">Initializing global borders & complete country directory</p>
+  </div>
+
+  <!-- 3D Globe Canvas Container -->
+  <div id="globe-container"></div>
+
+  <!-- Top Header & Search Bar UI -->
+  <header class="fixed top-0 left-0 right-0 z-20 p-3 sm:p-5 pointer-events-none flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+    
+    <!-- Brand Title Card -->
+    <div class="glass-panel rounded-2xl px-4 py-3 pointer-events-auto flex items-center justify-between md:justify-start gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+          <!-- Globe SVG Icon -->
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-sm sm:text-base font-bold text-white leading-tight">Terra3D World Explorer</h1>
+            <span id="country-count-badge" class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30">197 Countries</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Drag to spin • Scroll/Pinch to zoom • Click any country or pin</p>
+        </div>
+      </div>
+
+      <!-- Mobile Quick Toggle for Directory -->
+      <button id="mobile-dir-btn" title="Browse All Countries" class="md:hidden px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-sky-300 text-xs font-medium border border-slate-700/70 transition">
+        List
+      </button>
+    </div>
+
+    <!-- Search Input & All Countries Trigger -->
+    <div class="relative w-full md:w-[26rem] pointer-events-auto flex flex-col gap-2">
+      <div class="flex items-center gap-2">
+        <div class="glass-panel rounded-2xl flex-1 flex items-center px-3.5 py-2.5 focus-within:border-sky-400/70 transition">
+          <svg class="w-4 h-4 text-slate-400 mr-2.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path stroke-linecap="round" d="M21 21l-4.35-4.35"></path>
+          </svg>
+          <input
+            id="search-input"
+            type="text"
+            autocomplete="off"
+            placeholder="Search any of 197 countries or capitals..."
+            class="w-full bg-transparent text-sm text-white placeholder-slate-400 focus:outline-none"
+          />
+          <button id="clear-search-btn" class="hidden text-slate-400 hover:text-white p-1 rounded-lg transition" title="Clear search">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Browse All Countries Toggle Button -->
+        <button id="toggle-directory-btn" class="hidden md:flex items-center gap-1.5 glass-panel hover:bg-slate-800/90 text-slate-100 px-3.5 py-2.5 rounded-2xl text-xs font-semibold border border-slate-700/70 transition shrink-0" title="Browse All Countries">
+          <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+          <span>All (197)</span>
+        </button>
+      </div>
+
+      <!-- Search Results List -->
+      <div id="search-results" class="hidden glass-panel rounded-2xl max-h-72 overflow-y-auto custom-scroll divide-y divide-slate-800/80">
+        <!-- Populated dynamically via JS -->
+      </div>
+    </div>
+
+  </header>
+
+  <!-- Alphabetical All-Countries Directory Drawer -->
+  <aside id="directory-drawer" class="fixed top-20 right-3 sm:right-5 bottom-20 w-[calc(100vw-1.5rem)] sm:w-96 z-30 glass-panel rounded-2xl flex flex-col overflow-hidden transition-all duration-300 transform translate-x-[115%] opacity-0 pointer-events-none">
+    <div class="p-3.5 border-b border-slate-700/60 flex items-center justify-between gap-2">
+      <div>
+        <h2 class="text-sm font-bold text-white">All World Countries & Capitals</h2>
+        <p id="directory-subtitle" class="text-[11px] text-slate-400">197 Sovereign States & Territories (A–Z)</p>
+      </div>
+      <button id="close-directory-btn" class="p-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition" title="Close directory">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Region Quick Filter Pills -->
+    <div id="region-filters" class="px-3 py-2 border-b border-slate-800/80 flex items-center gap-1.5 overflow-x-auto custom-scroll shrink-0">
+      <button data-region="All" class="region-pill px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-sky-500/25 text-sky-300 border border-sky-400/40 whitespace-nowrap">All</button>
+      <button data-region="Asia" class="region-pill px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-800/70 text-slate-300 hover:bg-slate-700 whitespace-nowrap">Asia</button>
+      <button data-region="Europe" class="region-pill px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-800/70 text-slate-300 hover:bg-slate-700 whitespace-nowrap">Europe</button>
+      <button data-region="Africa" class="region-pill px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-800/70 text-slate-300 hover:bg-slate-700 whitespace-nowrap">Africa</button>
+      <button data-region="Americas" class="region-pill px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-800/70 text-slate-300 hover:bg-slate-700 whitespace-nowrap">Americas</button>
+      <button data-region="Oceania" class="region-pill px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-800/70 text-slate-300 hover:bg-slate-700 whitespace-nowrap">Oceania</button>
+    </div>
+
+    <!-- Scrollable Alphabetical List -->
+    <div id="directory-list" class="flex-1 overflow-y-auto custom-scroll divide-y divide-slate-800/70">
+      <!-- Populated on load -->
+    </div>
+  </aside>
+
+  <!-- Hover Tooltip (Follows cursor on desktop when hovering polygons) -->
+  <div id="hover-tooltip" class="fixed z-30 pointer-events-none hidden glass-panel rounded-xl px-3 py-2 text-xs shadow-xl border border-sky-400/30">
+    <div id="tooltip-country" class="font-bold text-white text-sm">Country</div>
+    <div class="text-amber-300 font-medium mt-0.5 flex items-center gap-1.5">
+      <span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span>
+      <span>Capital: <strong id="tooltip-capital" class="text-amber-200">Capital</strong></span>
+    </div>
+  </div>
+
+  <!-- Selected Country & Capital Detail Card (Bottom Left / Bottom Sheet on Mobile) -->
+  <aside id="detail-card" class="fixed bottom-20 sm:bottom-6 left-3 right-3 sm:right-auto sm:left-5 sm:w-80 z-20 glass-panel rounded-2xl p-4 transition-all duration-300 transform translate-y-4 opacity-0 pointer-events-none">
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <span id="detail-flag" class="text-2xl leading-none" role="img" aria-label="Country Flag">🌍</span>
+        <div>
+          <span id="detail-region" class="text-[10px] uppercase tracking-wider font-semibold text-sky-400">Region</span>
+          <h2 id="detail-country" class="text-base sm:text-lg font-bold text-white leading-tight">Select a Country</h2>
+        </div>
+      </div>
+      <button id="close-detail-btn" class="p-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition" title="Close details">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <div class="mt-3 pt-3 border-t border-slate-700/60 grid grid-cols-2 gap-2.5 text-xs">
+      <div class="bg-slate-900/70 rounded-xl p-2.5 border border-slate-800">
+        <div class="text-slate-400 text-[11px]">Capital City</div>
+        <div id="detail-capital" class="font-semibold text-amber-300 text-sm mt-0.5 truncate">—</div>
+      </div>
+      <div class="bg-slate-900/70 rounded-xl p-2.5 border border-slate-800">
+        <div class="text-slate-400 text-[11px]">ISO Code</div>
+        <div id="detail-iso" class="font-semibold text-slate-100 text-sm mt-0.5 truncate">—</div>
+      </div>
+      <div class="bg-slate-900/70 rounded-xl p-2.5 border border-slate-800 col-span-2 flex items-center justify-between">
+        <div>
+          <div class="text-slate-400 text-[11px]">Capital Coordinates</div>
+          <div id="detail-coords" class="font-mono text-slate-200 text-xs mt-0.5">—</div>
+        </div>
+        <button id="fly-again-btn" class="px-3 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/30 font-medium text-xs transition">
+          Center View
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Bottom Right Controls Dock -->
+  <div class="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-5 z-20 flex items-center justify-center sm:justify-end gap-2 pointer-events-none">
+    <div class="glass-panel rounded-2xl p-1.5 flex items-center gap-1.5 pointer-events-auto">
+      <!-- Auto-Rotate Toggle -->
+      <button id="toggle-rotate-btn" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-400/30 hover:bg-sky-500/30 transition" title="Toggle Auto-Spin">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span id="rotate-label">Auto-Spin: On</span>
+      </button>
+
+      <!-- Toggle Capital Labels -->
+      <button id="toggle-labels-btn" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-400/30 hover:bg-amber-500/30 transition" title="Show or Hide Capital Pins">
+        <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+        <span id="labels-label">Capitals: On</span>
+      </button>
+
+      <!-- Zoom In -->
+      <button id="zoom-in-btn" class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700/60 transition" title="Zoom In">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+      </button>
+
+      <!-- Zoom Out -->
+      <button id="zoom-out-btn" class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700/60 transition" title="Zoom Out">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4" />
+        </svg>
+      </button>
+
+      <!-- Reset View -->
+      <button id="reset-view-btn" class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700/60 transition" title="Reset Global View">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Error Message Banner (Hidden by default, replaces any alert()) -->
+  <div id="error-banner" class="hidden fixed top-24 left-1/2 -translate-x-1/2 z-50 glass-panel border-red-500/50 text-red-200 px-4 py-3 rounded-2xl text-xs sm:text-sm max-w-md text-center shadow-2xl">
+    <p id="error-text">Unable to load external map boundaries. Showing built-in world capitals.</p>
+  </div>
+
+  <script>
+    /**
+     * Complete Self-Contained Dataset of All 197 World Countries & Capitals
+     * Format: [Country Name, Capital City, Latitude, Longitude, Region, ISO2, ISO3]
+     * Includes all 193 UN Member States, 2 UN Observer States (Vatican City, Palestine),
+     * plus Taiwan & Kosovo—guaranteed to work 100% offline with zero missing nations.
+     */
+    const RAW_WORLD_COUNTRIES = [
+      ["Afghanistan", "Kabul", 34.53, 69.17, "Asia", "AF", "AFG"],
+      ["Albania", "Tirana", 41.33, 19.82, "Europe", "AL", "ALB"],
+      ["Algeria", "Algiers", 36.75, 3.04, "Africa", "DZ", "DZA"],
+      ["Andorra", "Andorra la Vella", 42.51, 1.52, "Europe", "AD", "AND"],
+      ["Angola", "Luanda", -8.84, 13.23, "Africa", "AO", "AGO"],
+      ["Antigua and Barbuda", "Saint John's", 17.12, -61.85, "Americas", "AG", "ATG"],
+      ["Argentina", "Buenos Aires", -34.60, -58.38, "Americas", "AR", "ARG"],
+      ["Armenia", "Yerevan", 40.18, 44.51, "Asia", "AM", "ARM"],
+      ["Australia", "Canberra", -35.28, 149.13, "Oceania", "AU", "AUS"],
+      ["Austria", "Vienna", 48.21, 16.37, "Europe", "AT", "AUT"],
+      ["Azerbaijan", "Baku", 40.41, 49.87, "Asia", "AZ", "AZE"],
+      ["Bahamas", "Nassau", 25.06, -77.35, "Americas", "BS", "BHS"],
+      ["Bahrain", "Manama", 26.22, 50.58, "Asia", "BH", "BHR"],
+      ["Bangladesh", "Dhaka", 23.81, 90.41, "Asia", "BD", "BGD"],
+      ["Barbados", "Bridgetown", 13.10, -59.62, "Americas", "BB", "BRB"],
+      ["Belarus", "Minsk", 53.90, 27.57, "Europe", "BY", "BLR"],
+      ["Belgium", "Brussels", 50.85, 4.35, "Europe", "BE", "BEL"],
+      ["Belize", "Belmopan", 17.25, -88.77, "Americas", "BZ", "BLZ"],
+      ["Benin", "Porto-Novo", 6.50, 2.63, "Africa", "BJ", "BEN"],
+      ["Bhutan", "Thimphu", 27.47, 89.64, "Asia", "BT", "BTN"],
+      ["Bolivia", "Sucre", -19.04, -65.26, "Americas", "BO", "BOL"],
+      ["Bosnia and Herzegovina", "Sarajevo", 43.86, 18.41, "Europe", "BA", "BIH"],
+      ["Botswana", "Gaborone", -24.65, 25.91, "Africa", "BW", "BWA"],
+      ["Brazil", "Brasília", -15.79, -47.88, "Americas", "BR", "BRA"],
+      ["Brunei", "Bandar Seri Begawan", 4.90, 114.94, "Asia", "BN", "BRN"],
+      ["Bulgaria", "Sofia", 42.70, 23.32, "Europe", "BG", "BGR"],
+      ["Burkina Faso", "Ouagadougou", 12.37, -1.52, "Africa", "BF", "BFA"],
+      ["Burundi", "Gitega", -3.43, 29.93, "Africa", "BI", "BDI"],
+      ["Cabo Verde", "Praia", 14.93, -23.51, "Africa", "CV", "CPV"],
+      ["Cambodia", "Phnom Penh", 11.56, 104.92, "Asia", "KH", "KHM"],
+      ["Cameroon", "Yaoundé", 3.87, 11.52, "Africa", "CM", "CMR"],
+      ["Canada", "Ottawa", 45.42, -75.70, "Americas", "CA", "CAN"],
+      ["Central African Republic", "Bangui", 4.39, 18.56, "Africa", "CF", "CAF"],
+      ["Chad", "N'Djamena", 12.13, 15.05, "Africa", "TD", "TCD"],
+      ["Chile", "Santiago", -33.45, -70.67, "Americas", "CL", "CHL"],
+      ["China", "Beijing", 39.90, 116.40, "Asia", "CN", "CHN"],
+      ["Colombia", "Bogotá", 4.71, -74.07, "Americas", "CO", "COL"],
+      ["Comoros", "Moroni", -11.70, 43.26, "Africa", "KM", "COM"],
+      ["Congo (Republic)", "Brazzaville", -4.27, 15.28, "Africa", "CG", "COG"],
+      ["Congo (Democratic Republic)", "Kinshasa", -4.44, 15.27, "Africa", "CD", "COD"],
+      ["Costa Rica", "San José", 9.93, -84.08, "Americas", "CR", "CRI"],
+      ["Côte d'Ivoire", "Yamoussoukro", 6.82, -5.28, "Africa", "CI", "CIV"],
+      ["Croatia", "Zagreb", 45.81, 15.98, "Europe", "HR", "HRV"],
+      ["Cuba", "Havana", 23.11, -82.37, "Americas", "CU", "CUB"],
+      ["Cyprus", "Nicosia", 35.19, 33.38, "Europe", "CY", "CYP"],
+      ["Czechia", "Prague", 50.08, 14.44, "Europe", "CZ", "CZE"],
+      ["Denmark", "Copenhagen", 55.68, 12.57, "Europe", "DK", "DNK"],
+      ["Djibouti", "Djibouti", 11.59, 43.15, "Africa", "DJ", "DJI"],
+      ["Dominica", "Roseau", 15.30, -61.39, "Americas", "DM", "DMA"],
+      ["Dominican Republic", "Santo Domingo", 18.49, -69.93, "Americas", "DO", "DOM"],
+      ["Ecuador", "Quito", -0.18, -78.47, "Americas", "EC", "ECU"],
+      ["Egypt", "Cairo", 30.04, 31.24, "Africa", "EG", "EGY"],
+      ["El Salvador", "San Salvador", 13.69, -89.22, "Americas", "SV", "SLV"],
+      ["Equatorial Guinea", "Malabo", 3.75, 8.78, "Africa", "GQ", "GNQ"],
+      ["Eritrea", "Asmara", 15.33, 38.93, "Africa", "ER", "ERI"],
+      ["Estonia", "Tallinn", 59.44, 24.75, "Europe", "EE", "EST"],
+      ["Eswatini", "Mbabane", -26.31, 31.13, "Africa", "SZ", "SWZ"],
+      ["Ethiopia", "Addis Ababa", 9.03, 38.74, "Africa", "ET", "ETH"],
+      ["Fiji", "Suva", -18.14, 178.44, "Oceania", "FJ", "FJI"],
+      ["Finland", "Helsinki", 60.17, 24.94, "Europe", "FI", "FIN"],
+      ["France", "Paris", 48.86, 2.35, "Europe", "FR", "FRA"],
+      ["Gabon", "Libreville", 0.42, 9.45, "Africa", "GA", "GAB"],
+      ["Gambia", "Banjul", 13.45, -16.58, "Africa", "GM", "GMB"],
+      ["Georgia", "Tbilisi", 41.72, 44.78, "Asia", "GE", "GEO"],
+      ["Germany", "Berlin", 52.52, 13.40, "Europe", "DE", "DEU"],
+      ["Ghana", "Accra", 5.60, -0.19, "Africa", "GH", "GHA"],
+      ["Greece", "Athens", 37.98, 23.73, "Europe", "GR", "GRC"],
+      ["Grenada", "St. George's", 12.05, -61.75, "Americas", "GD", "GRD"],
+      ["Guatemala", "Guatemala City", 14.63, -90.51, "Americas", "GT", "GTM"],
+      ["Guinea", "Conakry", 9.64, -13.58, "Africa", "GN", "GIN"],
+      ["Guinea-Bissau", "Bissau", 11.86, -15.60, "Africa", "GW", "GNB"],
+      ["Guyana", "Georgetown", 6.80, -58.16, "Americas", "GY", "GUY"],
+      ["Haiti", "Port-au-Prince", 18.59, -72.31, "Americas", "HT", "HTI"],
+      ["Honduras", "Tegucigalpa", 14.07, -87.19, "Americas", "HN", "HND"],
+      ["Hungary", "Budapest", 47.50, 19.04, "Europe", "HU", "HUN"],
+      ["Iceland", "Reykjavík", 64.15, -21.94, "Europe", "IS", "ISL"],
+      ["India", "New Delhi", 28.61, 77.21, "Asia", "IN", "IND"],
+      ["Indonesia", "Jakarta", -6.21, 106.85, "Asia", "ID", "IDN"],
+      ["Iran", "Tehran", 35.69, 51.39, "Asia", "IR", "IRN"],
+      ["Iraq", "Baghdad", 33.31, 44.37, "Asia", "IQ", "IRQ"],
+      ["Ireland", "Dublin", 53.35, -6.26, "Europe", "IE", "IRL"],
+      ["Israel", "Jerusalem", 31.77, 35.21, "Asia", "IL", "ISR"],
+      ["Italy", "Rome", 41.90, 12.50, "Europe", "IT", "ITA"],
+      ["Jamaica", "Kingston", 18.02, -76.81, "Americas", "JM", "JAM"],
+      ["Japan", "Tokyo", 35.68, 139.77, "Asia", "JP", "JPN"],
+      ["Jordan", "Amman", 31.95, 35.93, "Asia", "JO", "JOR"],
+      ["Kazakhstan", "Astana", 51.17, 71.45, "Asia", "KZ", "KAZ"],
+      ["Kenya", "Nairobi", -1.29, 36.82, "Africa", "KE", "KEN"],
+      ["Kiribati", "South Tarawa", 1.33, 172.98, "Oceania", "KI", "KIR"],
+      ["Kosovo", "Pristina", 42.66, 21.17, "Europe", "XK", "XKX"],
+      ["Kuwait", "Kuwait City", 29.38, 47.98, "Asia", "KW", "KWT"],
+      ["Kyrgyzstan", "Bishkek", 42.87, 74.59, "Asia", "KG", "KGZ"],
+      ["Laos", "Vientiane", 17.97, 102.63, "Asia", "LA", "LAO"],
+      ["Latvia", "Riga", 56.95, 24.11, "Europe", "LV", "LVA"],
+      ["Lebanon", "Beirut", 33.89, 35.50, "Asia", "LB", "LBN"],
+      ["Lesotho", "Maseru", -29.32, 27.48, "Africa", "LS", "LSO"],
+      ["Liberia", "Monrovia", 6.30, -10.80, "Africa", "LR", "LBR"],
+      ["Libya", "Tripoli", 32.89, 13.19, "Africa", "LY", "LBY"],
+      ["Liechtenstein", "Vaduz", 47.14, 9.52, "Europe", "LI", "LIE"],
+      ["Lithuania", "Vilnius", 54.69, 25.28, "Europe", "LT", "LTU"],
+      ["Luxembourg", "Luxembourg", 49.61, 6.13, "Europe", "LU", "LUX"],
+      ["Madagascar", "Antananarivo", -18.88, 47.51, "Africa", "MG", "MDG"],
+      ["Malawi", "Lilongwe", -13.96, 33.77, "Africa", "MW", "MWI"],
+      ["Malaysia", "Kuala Lumpur", 3.14, 101.69, "Asia", "MY", "MYS"],
+      ["Maldives", "Malé", 4.18, 73.51, "Asia", "MV", "MDV"],
+      ["Mali", "Bamako", 12.64, -8.00, "Africa", "ML", "MLI"],
+      ["Malta", "Valletta", 35.90, 14.51, "Europe", "MT", "MLT"],
+      ["Marshall Islands", "Majuro", 7.12, 171.18, "Oceania", "MH", "MHL"],
+      ["Mauritania", "Nouakchott", 18.08, -15.98, "Africa", "MR", "MRT"],
+      ["Mauritius", "Port Louis", -20.16, 57.50, "Africa", "MU", "MUS"],
+      ["Mexico", "Mexico City", 19.43, -99.13, "Americas", "MX", "MEX"],
+      ["Micronesia", "Palikir", 6.92, 158.16, "Oceania", "FM", "FSM"],
+      ["Moldova", "Chișinău", 47.01, 28.86, "Europe", "MD", "MDA"],
+      ["Monaco", "Monaco", 43.73, 7.42, "Europe", "MC", "MCO"],
+      ["Mongolia", "Ulaanbaatar", 47.89, 106.91, "Asia", "MN", "MNG"],
+      ["Montenegro", "Podgorica", 42.44, 19.26, "Europe", "ME", "MNE"],
+      ["Morocco", "Rabat", 34.02, -6.84, "Africa", "MA", "MAR"],
+      ["Mozambique", "Maputo", -25.97, 32.57, "Africa", "MZ", "MOZ"],
+      ["Myanmar", "Naypyidaw", 19.76, 96.07, "Asia", "MM", "MMR"],
+      ["Namibia", "Windhoek", -22.56, 17.08, "Africa", "NA", "NAM"],
+      ["Nauru", "Yaren", -0.55, 166.92, "Oceania", "NR", "NRU"],
+      ["Nepal", "Kathmandu", 27.72, 85.32, "Asia", "NP", "NPL"],
+      ["Netherlands", "Amsterdam", 52.37, 4.90, "Europe", "NL", "NLD"],
+      ["New Zealand", "Wellington", -41.29, 174.78, "Oceania", "NZ", "NZL"],
+      ["Nicaragua", "Managua", 12.11, -86.24, "Americas", "NI", "NIC"],
+      ["Niger", "Niamey", 13.51, 2.13, "Africa", "NE", "NER"],
+      ["Nigeria", "Abuja", 9.08, 7.40, "Africa", "NG", "NGA"],
+      ["North Korea", "Pyongyang", 39.04, 125.76, "Asia", "KP", "PRK"],
+      ["North Macedonia", "Skopje", 42.00, 21.43, "Europe", "MK", "MKD"],
+      ["Norway", "Oslo", 59.91, 10.75, "Europe", "NO", "NOR"],
+      ["Oman", "Muscat", 23.59, 58.38, "Asia", "OM", "OMN"],
+      ["Pakistan", "Islamabad", 33.68, 73.05, "Asia", "PK", "PAK"],
+      ["Palau", "Ngerulmud", 7.50, 134.62, "Oceania", "PW", "PLW"],
+      ["Palestine", "Ramallah", 31.90, 35.20, "Asia", "PS", "PSE"],
+      ["Panama", "Panama City", 8.98, -79.52, "Americas", "PA", "PAN"],
+      ["Papua New Guinea", "Port Moresby", -9.44, 147.18, "Oceania", "PG", "PNG"],
+      ["Paraguay", "Asunción", -25.26, -57.58, "Americas", "PY", "PRY"],
+      ["Peru", "Lima", -12.05, -77.04, "Americas", "PE", "PER"],
+      ["Philippines", "Manila", 14.60, 120.98, "Asia", "PH", "PHL"],
+      ["Poland", "Warsaw", 52.23, 21.01, "Europe", "PL", "POL"],
+      ["Portugal", "Lisbon", 38.72, -9.14, "Europe", "PT", "PRT"],
+      ["Qatar", "Doha", 25.29, 51.53, "Asia", "QA", "QAT"],
+      ["Romania", "Bucharest", 44.43, 26.10, "Europe", "RO", "ROU"],
+      ["Russia", "Moscow", 55.76, 37.62, "Europe", "RU", "RUS"],
+      ["Rwanda", "Kigali", -1.94, 30.06, "Africa", "RW", "RWA"],
+      ["Saint Kitts and Nevis", "Basseterre", 17.30, -62.72, "Americas", "KN", "KNA"],
+      ["Saint Lucia", "Castries", 14.01, -60.99, "Americas", "LC", "LCA"],
+      ["Saint Vincent and the Grenadines", "Kingstown", 13.16, -61.22, "Americas", "VC", "VCT"],
+      ["Samoa", "Apia", -13.85, -171.75, "Oceania", "WS", "WSM"],
+      ["San Marino", "San Marino", 43.94, 12.46, "Europe", "SM", "SMR"],
+      ["Sao Tome and Principe", "São Tomé", 0.34, 6.73, "Africa", "ST", "STP"],
+      ["Saudi Arabia", "Riyadh", 24.71, 46.68, "Asia", "SA", "SAU"],
+      ["Senegal", "Dakar", 14.72, -17.47, "Africa", "SN", "SEN"],
+      ["Serbia", "Belgrade", 44.79, 20.45, "Europe", "RS", "SRB"],
+      ["Seychelles", "Victoria", -4.62, 55.45, "Africa", "SC", "SYC"],
+      ["Sierra Leone", "Freetown", 8.47, -13.23, "Africa", "SL", "SLE"],
+      ["Singapore", "Singapore", 1.35, 103.82, "Asia", "SG", "SGP"],
+      ["Slovakia", "Bratislava", 48.15, 17.11, "Europe", "SK", "SVK"],
+      ["Slovenia", "Ljubljana", 46.06, 14.51, "Europe", "SI", "SVN"],
+      ["Solomon Islands", "Honiara", -9.44, 159.97, "Oceania", "SB", "SLB"],
+      ["Somalia", "Mogadishu", 2.05, 45.32, "Africa", "SO", "SOM"],
+      ["South Africa", "Pretoria", -25.75, 28.23, "Africa", "ZA", "ZAF"],
+      ["South Korea", "Seoul", 37.57, 126.98, "Asia", "KR", "KOR"],
+      ["South Sudan", "Juba", 4.85, 31.57, "Africa", "SS", "SSD"],
+      ["Spain", "Madrid", 40.42, -3.70, "Europe", "ES", "ESP"],
+      ["Sri Lanka", "Sri Jayawardenepura Kotte", 6.89, 79.92, "Asia", "LK", "LKA"],
+      ["Sudan", "Khartoum", 15.50, 32.56, "Africa", "SD", "SDN"],
+      ["Suriname", "Paramaribo", 5.85, -55.20, "Americas", "SR", "SUR"],
+      ["Sweden", "Stockholm", 59.33, 18.07, "Europe", "SE", "SWE"],
+      ["Switzerland", "Bern", 46.95, 7.45, "Europe", "CH", "CHE"],
+      ["Syria", "Damascus", 33.51, 36.28, "Asia", "SY", "SYR"],
+      ["Taiwan", "Taipei", 25.03, 121.57, "Asia", "TW", "TWN"],
+      ["Tajikistan", "Dushanbe", 38.56, 68.77, "Asia", "TJ", "TJK"],
+      ["Tanzania", "Dodoma", -6.16, 35.75, "Africa", "TZ", "TZA"],
+      ["Thailand", "Bangkok", 13.76, 100.50, "Asia", "TH", "THA"],
+      ["Timor-Leste", "Dili", -8.56, 125.56, "Asia", "TL", "TLS"],
+      ["Togo", "Lomé", 6.13, 1.22, "Africa", "TG", "TGO"],
+      ["Tonga", "Nukuʻalofa", -21.14, -175.20, "Oceania", "TO", "TON"],
+      ["Trinidad and Tobago", "Port of Spain", 10.66, -61.51, "Americas", "TT", "TTO"],
+      ["Tunisia", "Tunis", 36.81, 10.18, "Africa", "TN", "TUN"],
+      ["Turkey", "Ankara", 39.93, 32.86, "Asia", "TR", "TUR"],
+      ["Turkmenistan", "Ashgabat", 37.96, 58.33, "Asia", "TM", "TKM"],
+      ["Tuvalu", "Funafuti", -8.52, 179.20, "Oceania", "TV", "TUV"],
+      ["Uganda", "Kampala", 0.35, 32.58, "Africa", "UG", "UGA"],
+      ["Ukraine", "Kyiv", 50.45, 30.52, "Europe", "UA", "UKR"],
+      ["United Arab Emirates", "Abu Dhabi", 24.45, 54.38, "Asia", "AE", "ARE"],
+      ["United Kingdom", "London", 51.51, -0.13, "Europe", "GB", "GBR"],
+      ["United States", "Washington, D.C.", 38.91, -77.04, "Americas", "US", "USA"],
+      ["Uruguay", "Montevideo", -34.90, -56.16, "Americas", "UY", "URY"],
+      ["Uzbekistan", "Tashkent", 41.30, 69.24, "Asia", "UZ", "UZB"],
+      ["Vanuatu", "Port Vila", -17.73, 168.32, "Oceania", "VU", "VUT"],
+      ["Vatican City", "Vatican City", 41.90, 12.45, "Europe", "VA", "VAT"],
+      ["Venezuela", "Caracas", 10.48, -66.90, "Americas", "VE", "VEN"],
+      ["Vietnam", "Hanoi", 21.03, 105.85, "Asia", "VN", "VNM"],
+      ["Yemen", "Sana'a", 15.37, 44.19, "Asia", "YE", "YEM"],
+      ["Zambia", "Lusaka", -15.39, 28.32, "Africa", "ZM", "ZMB"],
+      ["Zimbabwe", "Harare", -17.83, 31.05, "Africa", "ZW", "ZWE"]
+    ];
+
+    /**
+     * Application State & Configuration
+     */
+    const state = {
+      countries: [],           // Full 197-country dataset
+      polygons: [],            // GeoJSON features for 3D country polygons
+      hoveredPolygon: null,    // Currently hovered GeoJSON feature
+      selectedCountry: null,   // Currently selected country record
+      autoRotate: true,        // Globe auto-spin toggle
+      showCapitals: true,      // Show/hide capital city markers
+      isZoomedOut: false,      // Tracks camera altitude for label de-cluttering
+      isDragging: false,       // True while user is actively dragging/pinching
+      activeFlightFrame: null, // Active requestAnimationFrame ID for smooth cubic flyTo
+      activeRegion: 'All'      // Active region filter in directory drawer
+    };
+
+    // DOM Element References
+    const globeContainer = document.getElementById('globe-container');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingStatus = document.getElementById('loading-status');
+    const searchInput = document.getElementById('search-input');
+    const clearSearchBtn = document.getElementById('clear-search-btn');
+    const searchResults = document.getElementById('search-results');
+    const hoverTooltip = document.getElementById('hover-tooltip');
+    const tooltipCountry = document.getElementById('tooltip-country');
+    const tooltipCapital = document.getElementById('tooltip-capital');
+    const detailCard = document.getElementById('detail-card');
+    const errorBanner = document.getElementById('error-banner');
+    const directoryDrawer = document.getElementById('directory-drawer');
+    const directoryList = document.getElementById('directory-list');
+
+    // Track pointer down vs pointer up to cleanly distinguish taps from drags
+    let pointerDownPos = { x: 0, y: 0, time: 0 };
+    let lastTapWasClean = true;
+
+    globeContainer.addEventListener('pointerdown', (e) => {
+      pointerDownPos = { x: e.clientX, y: e.clientY, time: performance.now() };
+      lastTapWasClean = true;
+      cancelActiveFlight();
+    }, { passive: true });
+
+    globeContainer.addEventListener('pointermove', (e) => {
+      // Update hover tooltip position on desktop pointer devices
+      if (e.pointerType === 'mouse' && !hoverTooltip.classList.contains('hidden')) {
+        const offsetX = 16;
+        const offsetY = 16;
+        const maxX = window.innerWidth - hoverTooltip.offsetWidth - 12;
+        const maxY = window.innerHeight - hoverTooltip.offsetHeight - 12;
+        hoverTooltip.style.left = `${Math.min(e.clientX + offsetX, maxX)}px`;
+        hoverTooltip.style.top = `${Math.min(e.clientY + offsetY, maxY)}px`;
+      }
+
+      if (e.buttons > 0 || e.pointerType === 'touch') {
+        const dx = e.clientX - pointerDownPos.x;
+        const dy = e.clientY - pointerDownPos.y;
+        if ((dx * dx + dy * dy) > 36) { // > 6px movement = drag/pinch gesture
+          lastTapWasClean = false;
+          if (!state.isDragging) {
+            state.isDragging = true;
+            globeContainer.classList.add('is-dragging');
+            hoverTooltip.classList.add('hidden');
+          }
+        }
+      }
+    }, { passive: true });
+
+    const endPointerGesture = () => {
+      if (state.isDragging) {
+        // Keep dragging flag briefly so trailing click events from finger lift are ignored
+        setTimeout(() => {
+          state.isDragging = false;
+          globeContainer.classList.remove('is-dragging');
+        }, 60);
+      }
+    };
+
+    globeContainer.addEventListener('pointerup', endPointerGesture, { passive: true });
+    globeContainer.addEventListener('pointercancel', endPointerGesture, { passive: true });
+
+    /**
+     * Show non-blocking status notification instead of alert()
+     */
+    function showMessage(msg) {
+      document.getElementById('error-text').textContent = msg;
+      errorBanner.classList.remove('hidden');
+      setTimeout(() => {
+        errorBanner.classList.add('hidden');
+      }, 5000);
+    }
+
+    /**
+     * Convert ISO Alpha-2 code (e.g., "LK", "JP") to Unicode Flag Emoji
+     */
+    function getFlagEmoji(iso2) {
+      if (!iso2 || iso2.length !== 2) return '🌍';
+      const codePoints = iso2
+        .toUpperCase()
+        .split('')
+        .map(char => 127397 + char.charCodeAt(0));
+      return String.fromCodePoint(...codePoints);
+    }
+
+    /**
+     * Normalize country names for reliable matching
+     */
+    function normalizeName(name) {
+      if (!name) return '';
+      return name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, '')
+        .replace(/^the/, '');
+    }
+
+    /**
+     * Alias map for common naming variations between Natural Earth / World Atlas & standard names
+     */
+    const NAME_ALIASES = {
+      'unitedstatesofamerica': 'unitedstates',
+      'usa': 'unitedstates',
+      'demrepcongo': 'congodemocraticrepublic',
+      'democraticrepublicofthecongo': 'congodemocraticrepublic',
+      'congodrc': 'congodemocraticrepublic',
+      'repcongo': 'congorepublic',
+      'republicofthecongo': 'congorepublic',
+      'congo': 'congorepublic',
+      'czechrepublic': 'czechia',
+      'bosniaandherz': 'bosniaandherzegovina',
+      'dominicanrep': 'dominicanrepublic',
+      'centralafricanrep': 'centralafricanrepublic',
+      'eqguinea': 'equatorialguinea',
+      'swaziland': 'eswatini',
+      'solomonis': 'solomonislands',
+      'korea': 'southkorea',
+      'republicofkorea': 'southkorea',
+      'demrepkorea': 'northkorea',
+      'democraticpeoplesrepublicofkorea': 'northkorea',
+      'laopdr': 'laos',
+      'russianfederation': 'russia',
+      'syrianarabrepublic': 'syria',
+      'turkiye': 'turkey',
+      'ivorycoast': 'cotedivoire',
+      'easttimor': 'timorleste',
+      'macedonia': 'northmacedonia',
+      'ssudan': 'southsudan',
+      'capeverde': 'caboverde',
+      'burma': 'myanmar',
+      'holysee': 'vaticancity',
+      'vatican': 'vaticancity',
+      'stlucia': 'saintlucia',
+      'stkittsandnevis': 'saintkittsandnevis',
+      'stvincentandthegrenadines': 'saintvincentandthegrenadines'
+    };
+
+    function getCanonicalKey(rawName) {
+      const norm = normalizeName(rawName);
+      return NAME_ALIASES[norm] || norm;
+    }
+
+    /**
+     * Build structured country objects from the complete 197-country embedded list
+     */
+    function buildCompleteCountryDataset() {
+      return RAW_WORLD_COUNTRIES.map(([name, capital, lat, lng, region, iso2, iso3]) => ({
+        name,
+        capital,
+        lat,
+        lng,
+        region,
+        iso2,
+        iso3,
+        canonicalKey: getCanonicalKey(name)
+      })).sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    /**
+     * Generate a crisp procedural ocean/grid fallback canvas texture immediately
+     * so WebGL starts at instant 60fps with zero texture download stutter.
+     */
+    function createInstantEarthTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+
+      // Deep ocean gradient
+      const oceanGrad = ctx.createLinearGradient(0, 0, 0, 512);
+      oceanGrad.addColorStop(0, '#0c2748');
+      oceanGrad.addColorStop(0.2, '#0b3663');
+      oceanGrad.addColorStop(0.5, '#0a4275');
+      oceanGrad.addColorStop(0.8, '#0b3663');
+      oceanGrad.addColorStop(1, '#0c2748');
+      ctx.fillStyle = oceanGrad;
+      ctx.fillRect(0, 0, 1024, 512);
+
+      // Subtle latitude & longitude graticule lines for crisp spatial orientation
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= 1024; x += 64) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 512);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= 512; y += 32) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(1024, y);
+        ctx.stroke();
+      }
+
+      // Equator highlight
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.22)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, 256);
+      ctx.lineTo(1024, 256);
+      ctx.stroke();
+
+      return canvas.toDataURL('image/png');
+    }
+
+    // Initialize Globe.gl Instance with hardware-accelerated renderer settings
+    const world = Globe({ animateIn: false })(globeContainer)
+      .globeImageUrl(createInstantEarthTexture())
+      .showAtmosphere(true)
+      .atmosphereColor('#38bdf8')
+      .atmosphereAltitude(0.16)
+      .polygonAltitude(feat => isFeatureSelected(feat) ? 0.022 : (feat === state.hoveredPolygon ? 0.015 : 0.006))
+      .polygonCapColor(feat => {
+        if (isFeatureSelected(feat)) return 'rgba(56, 189, 248, 0.58)';
+        if (feat === state.hoveredPolygon) return 'rgba(251, 191, 36, 0.42)';
+        return 'rgba(30, 64, 115, 0.72)';
+      })
+      .polygonSideColor(() => 'rgba(56, 189, 248, 0.22)')
+      .polygonStrokeColor(() => 'rgba(148, 197, 248, 0.52)')
+      .polygonCapCurvatureResolution(4)
+      .onPolygonHover(handlePolygonHover)
+      .onPolygonClick(handlePolygonClick)
+      .htmlElementsData([])
+      .htmlLat(d => d.lat)
+      .htmlLng(d => d.lng)
+      .htmlAltitude(0.015)
+      .htmlElement(createCapitalPinElement);
+
+    // Optimize WebGL Renderer Pixel Ratio for silky 60fps on high-DPI smartphones
+    const renderer = world.renderer();
+    if (renderer) {
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.powerPreference = 'high-performance';
+    }
+
+    // Configure Three.js OrbitControls for responsive mobile touch & desktop mouse gestures
+    const controls = world.controls();
+    controls.autoRotate = state.autoRotate;
+    controls.autoRotateSpeed = 0.5;
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.065;
+    controls.enablePan = false;
+    controls.zoomSpeed = 0.85;
+    controls.rotateSpeed = 0.75;
+    controls.minDistance = 112;
+    controls.maxDistance = 420;
+
+    // Explicit multi-touch mapping: 1 finger rotates, 2 fingers pinch-to-zoom smoothly
+    if (typeof THREE !== 'undefined' && THREE.TOUCH) {
+      controls.touches = {
+        ONE: THREE.TOUCH.ROTATE,
+        TWO: THREE.TOUCH.DOLLY_PAN
+      };
+    }
+
+    // Pause auto-rotate cleanly during user touch/mouse drag
+    controls.addEventListener('start', () => {
+      cancelActiveFlight();
+      if (state.autoRotate) {
+        controls.autoRotate = false;
+      }
+    });
+
+    controls.addEventListener('end', () => {
+      if (state.autoRotate) {
+        controls.autoRotate = true;
+      }
+    });
+
+    // Dynamically scale rotation sensitivity by camera distance + toggle zoomed-out class cleanly
+    let lastAltCheck = 0;
+    controls.addEventListener('change', () => {
+      const cam = world.camera();
+      const dist = cam ? cam.position.length() : 220;
+
+      // Smooth zoom-adaptive rotation speed: slower & precise when zoomed in on microstates
+      const normalizedZoom = Math.max(0, Math.min(1, (dist - 112) / (420 - 112)));
+      controls.rotateSpeed = 0.22 + normalizedZoom * 0.68;
+
+      // Throttle label visibility class toggle to avoid redundant checks
+      const now = performance.now();
+      if (now - lastAltCheck > 80) {
+        lastAltCheck = now;
+        const zoomedOutNow = dist > 265;
+        if (zoomedOutNow !== state.isZoomedOut) {
+          state.isZoomedOut = zoomedOutNow;
+          globeContainer.classList.toggle('zoomed-out', zoomedOutNow);
+        }
+      }
+    });
+
+    /**
+     * Cancel any running smooth camera flight immediately if user touches/drags
+     */
+    function cancelActiveFlight() {
+      if (state.activeFlightFrame !== null) {
+        cancelAnimationFrame(state.activeFlightFrame);
+        state.activeFlightFrame = null;
+      }
+    }
+
+    /**
+     * Smooth cubic ease-out camera flight to target coordinates (interruptible on touch)
+     */
+    function smoothFlyTo(targetLat, targetLng, targetAlt = 1.35, duration = 950) {
+      cancelActiveFlight();
+
+      const startPov = world.pointOfView();
+      const startLat = startPov.lat || 0;
+      const startLng = startPov.lng || 0;
+      const startAlt = startPov.altitude || 2.2;
+
+      // Take shortest longitudinal path around the sphere (-180..180)
+      let deltaLng = ((targetLng - startLng + 540) % 360) - 180;
+      const deltaLat = targetLat - startLat;
+      const deltaAlt = targetAlt - startAlt;
+
+      const startTime = performance.now();
+
+      function step(now) {
+        const elapsed = now - startTime;
+        const t = Math.min(1, elapsed / duration);
+        // Cubic ease-out curve for silky deceleration
+        const ease = 1 - Math.pow(1 - t, 3);
+
+        world.pointOfView({
+          lat: startLat + deltaLat * ease,
+          lng: startLng + deltaLng * ease,
+          altitude: startAlt + deltaAlt * ease
+        }, 0);
+
+        if (t < 1) {
+          state.activeFlightFrame = requestAnimationFrame(step);
+        } else {
+          state.activeFlightFrame = null;
+        }
+      }
+
+      state.activeFlightFrame = requestAnimationFrame(step);
+    }
+
+    /**
+     * Quaternion-based Smooth 3D Globe Controller + Clamped Delta-Time Physics Loop
+     * Replaces heavy WebGL/DOM pin layers with a high-DPI 2D/3D orthographic projection canvas
+     * so 1-finger spin, 2-finger pinch zoom, pole-crossing, and inertia remain jitter-free.
+     */
+    function initSmoothQuaternionGlobe() {
+      // Remove WebGL globe sub-element if present and mount clean high-DPI canvas
+      globeContainer.innerHTML = '';
+      const canvas = document.createElement('canvas');
+      canvas.id = 'smooth-globe-canvas';
+      canvas.style.display = 'block';
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      canvas.style.touchAction = 'none';
+      globeContainer.appendChild(canvas);
+      const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true }) || canvas.getContext('2d');
+
+      // Unit Quaternion helpers: q = [w, x, y, z]
+      function quatNormalize(q) {
+        const len = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
+        return [q[0] / len, q[1] / len, q[2] / len, q[3] / len];
+      }
+
+      function quatFromAxisAngle(ax, ay, az, angle) {
+        const half = angle * 0.5;
+        const s = Math.sin(half);
+        const len = Math.hypot(ax, ay, az) || 1;
+        return quatNormalize([Math.cos(half), (ax / len) * s, (ay / len) * s, (az / len) * s]);
+      }
+
+      function quatMultiply(a, b) {
+        const [aw, ax, ay, az] = a;
+        const [bw, bx, by, bz] = b;
+        return quatNormalize([
+          aw * bw - ax * bx - ay * by - az * bz,
+          aw * bx + ax * bw + ay * bz - az * by,
+          aw * by - ax * bz + ay * bw + az * bx,
+          aw * bz + ax * by - ay * bx + az * bw
+        ]);
+      }
+
+      function quatSlerp(a, b, t) {
+        let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+        let b1 = b;
+        if (dot < 0) {
+          dot = -dot;
+          b1 = [-b[0], -b[1], -b[2], -b[3]];
+        }
+        if (dot > 0.9995) {
+          return quatNormalize([
+            a[0] + t * (b1[0] - a[0]),
+            a[1] + t * (b1[1] - a[1]),
+            a[2] + t * (b1[2] - a[2]),
+            a[3] + t * (b1[3] - a[3])
+          ]);
+        }
+        const theta0 = Math.acos(Math.max(-1, Math.min(1, dot)));
+        const sinTheta0 = Math.sin(theta0);
+        const theta = theta0 * t;
+        const sinTheta = Math.sin(theta);
+        const s0 = Math.cos(theta) - (dot * sinTheta) / sinTheta0;
+        const s1 = sinTheta / sinTheta0;
+        return quatNormalize([
+          s0 * a[0] + s1 * b1[0],
+          s0 * a[1] + s1 * b1[1],
+          s0 * a[2] + s1 * b1[2],
+          s0 * a[3] + s1 * b1[3]
+        ]);
+      }
+
+      // Rotate 3D vector v = [x, y, z] by unit quaternion q
+      function rotateVecByQuat(v, q) {
+        const [vx, vy, vz] = v;
+        const [qw, qx, qy, qz] = q;
+        // t = 2 * cross(q.xyz, v)
+        const tx = 2 * (qy * vz - qz * vy);
+        const ty = 2 * (qz * vx - qx * vz);
+        const tz = 2 * (qx * vy - qy * vx);
+        return [
+          vx + qw * tx + (qy * tz - qz * ty),
+          vy + qw * ty + (qz * tx - qx * tz),
+          vz + qw * tz + (qx * ty - qy * tx)
+        ];
+      }
+
+      // Build unit quaternion looking at (lat, lng) with camera +Z pointing toward viewer
+      function quatFromLatLng(latDeg, lngDeg) {
+        const latRad = (latDeg * Math.PI) / 180;
+        const lngRad = (lngDeg * Math.PI) / 180;
+        // Yaw around Y so target longitude faces +Z, then pitch around X for target latitude
+        const qYaw = quatFromAxisAngle(0, 1, 0, -lngRad);
+        const qPitch = quatFromAxisAngle(1, 0, 0, latRad);
+        return quatMultiply(qYaw, qPitch);
+      }
+
+      // Convert (lat, lng) on unit sphere to world unit vector [x, y, z]
+      function latLngToUnitVec(latDeg, lngDeg) {
+        const lat = (latDeg * Math.PI) / 180;
+        const lng = (lngDeg * Math.PI) / 180;
+        const cosLat = Math.cos(lat);
+        return [
+          cosLat * Math.sin(lng),
+          Math.sin(lat),
+          cosLat * Math.cos(lng)
+        ];
+      }
+
+      // Physics & Camera State (q = qYaw * qPitch composed incrementally without Euler lock)
+      const camState = {
+        q: quatFromLatLng(18, -35),
+        zoom: 1.0,                 // 0.72 (far) to 3.4 (close)
+        targetZoom: 1.0,
+        velYaw: 0,                 // radians / sec
+        velPitch: 0,               // radians / sec
+        velZoom: 0,                // zoom units / sec
+        flight: null               // { startQ, endQ, startZoom, endZoom, elapsed, duration }
+      };
+
+      // Lightweight active pointer/touch tracker (no hit-testing or label layout inside pointermove)
+      const pointers = new Map();
+      let lastCentroid = null;
+      let lastPinchDist = null;
+      let lastPointerPos = null;
+      let gestureDownPos = { x: 0, y: 0 };
+      let gestureMoved = false;
+      let latestPointerSample = null; // { x, y, pointerType, isHoverOnly }
+      let hoveredCountry = null;
+
+      // Cached per-frame projected coordinates
+      let projectedCapitals = [];
+      let viewWidth = window.innerWidth;
+      let viewHeight = window.innerHeight;
+      let globeRadius = 220;
+
+      // Simplified continent/island polygon outlines (lon, lat) for crisp instant vector borders
+      // supplemented by loaded GeoJSON features when available
+      let vectorPolygons = [];
+
+      function resizeCanvas() {
+        viewWidth = window.innerWidth;
+        viewHeight = window.innerHeight;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.max(1, Math.floor(viewWidth * dpr));
+        canvas.height = Math.max(1, Math.floor(viewHeight * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const minDim = Math.min(viewWidth, viewHeight);
+        globeRadius = minDim * 0.37;
+      }
+
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas, { passive: true });
+
+      // Apply yaw and pitch deltas via qYaw * qPitch in camera-aligned space
+      function applyAngularDelta(deltaYaw, deltaPitch) {
+        const qYaw = quatFromAxisAngle(0, 1, 0, deltaYaw);
+        const qPitch = quatFromAxisAngle(1, 0, 0, deltaPitch);
+        // Compose qYaw * qPitch * camState.q so poles never flip or lock
+        camState.q = quatMultiply(quatMultiply(qYaw, qPitch), camState.q);
+      }
+
+      function stopFlight() {
+        camState.flight = null;
+      }
+
+      // Lightweight pointer event handlers (record coordinates/deltas only; zero hit-testing here)
+      canvas.addEventListener('pointerdown', (e) => {
+        try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+        stopFlight();
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        gestureDownPos = { x: e.clientX, y: e.clientY };
+        gestureMoved = false;
+        camState.velYaw = 0;
+        camState.velPitch = 0;
+        camState.velZoom = 0;
+
+        if (pointers.size === 1) {
+          lastPointerPos = { x: e.clientX, y: e.clientY };
+          lastPinchDist = null;
+          lastCentroid = null;
+        } else if (pointers.size >= 2) {
+          const pts = Array.from(pointers.values());
+          lastCentroid = {
+            x: (pts[0].x + pts[1].x) * 0.5,
+            y: (pts[0].y + pts[1].y) * 0.5
+          };
+          lastPinchDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) || 1;
+          lastPointerPos = null;
+        }
+
+        state.isDragging = true;
+        globeContainer.classList.add('is-dragging');
+        hoverTooltip.classList.add('hidden');
+      }, { passive: true });
+
+      canvas.addEventListener('pointermove', (e) => {
+        if (!pointers.has(e.pointerId)) {
+          // Hover-only mouse move when not pressing buttons
+          if (e.pointerType === 'mouse' && e.buttons === 0) {
+            latestPointerSample = { x: e.clientX, y: e.clientY, pointerType: 'mouse', hoverOnly: true };
+          }
+          return;
+        }
+
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const dxDown = e.clientX - gestureDownPos.x;
+        const dyDown = e.clientY - gestureDownPos.y;
+        if (dxDown * dxDown + dyDown * dyDown > 25) {
+          gestureMoved = true;
+          lastTapWasClean = false;
+        }
+
+        const zoomScale = 1 / Math.sqrt(Math.max(0.5, camState.zoom));
+        const rotSensitivity = 0.0052 * zoomScale;
+
+        if (pointers.size === 1 && lastPointerPos) {
+          const dx = e.clientX - lastPointerPos.x;
+          const dy = e.clientY - lastPointerPos.y;
+          lastPointerPos = { x: e.clientX, y: e.clientY };
+
+          const dYaw = dx * rotSensitivity;
+          const dPitch = -dy * rotSensitivity;
+          applyAngularDelta(dYaw, dPitch);
+
+          // Blend instantaneous angular velocity for silky momentum release
+          camState.velYaw = camState.velYaw * 0.35 + (dYaw / 0.016) * 0.65;
+          camState.velPitch = camState.velPitch * 0.35 + (dPitch / 0.016) * 0.65;
+        } else if (pointers.size >= 2) {
+          const pts = Array.from(pointers.values());
+          const centroid = {
+            x: (pts[0].x + pts[1].x) * 0.5,
+            y: (pts[0].y + pts[1].y) * 0.5
+          };
+          const pinchDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) || 1;
+
+          if (lastPinchDist && lastPinchDist > 1) {
+            const ratio = pinchDist / lastPinchDist;
+            const prevZoom = camState.targetZoom;
+            camState.targetZoom = Math.max(0.72, Math.min(3.4, camState.targetZoom * ratio));
+            camState.zoom = camState.targetZoom;
+            camState.velZoom = ((camState.targetZoom - prevZoom) / 0.016) * 0.5;
+          }
+
+          if (lastCentroid) {
+            const cdx = centroid.x - lastCentroid.x;
+            const cdy = centroid.y - lastCentroid.y;
+            applyAngularDelta(cdx * rotSensitivity * 0.85, -cdy * rotSensitivity * 0.85);
+          }
+
+          lastPinchDist = pinchDist;
+          lastCentroid = centroid;
+        }
+      }, { passive: true });
+
+      function handlePointerRelease(e) {
+        const wasTap = !gestureMoved && pointers.size <= 1;
+        const tapX = e.clientX;
+        const tapY = e.clientY;
+        pointers.delete(e.pointerId);
+
+        if (pointers.size === 1) {
+          const remaining = pointers.values().next().value;
+          lastPointerPos = remaining ? { x: remaining.x, y: remaining.y } : null;
+          lastPinchDist = null;
+          lastCentroid = null;
+        } else if (pointers.size === 0) {
+          lastPointerPos = null;
+          lastPinchDist = null;
+          lastCentroid = null;
+          state.isDragging = false;
+          globeContainer.classList.remove('is-dragging');
+
+          // Clamp extreme flick velocities so coasting stays controlled
+          camState.velYaw = Math.max(-6.5, Math.min(6.5, camState.velYaw));
+          camState.velPitch = Math.max(-6.5, Math.min(6.5, camState.velPitch));
+
+          if (wasTap) {
+            latestPointerSample = { x: tapX, y: tapY, pointerType: e.pointerType, tap: true };
+          }
+        }
+      }
+
+      canvas.addEventListener('pointerup', handlePointerRelease, { passive: true });
+      canvas.addEventListener('pointercancel', handlePointerRelease, { passive: true });
+
+      // Smooth wheel zoom on desktop
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        stopFlight();
+        const factor = Math.exp(-e.deltaY * 0.00115);
+        camState.targetZoom = Math.max(0.72, Math.min(3.4, camState.targetZoom * factor));
+      }, { passive: false });
+
+      // Project a unit sphere vector [x, y, z] into 2D screen space
+      function projectUnitVec(unitVec) {
+        const rVec = rotateVecByQuat(unitVec, camState.q);
+        const r = globeRadius * camState.zoom;
+        const cx = viewWidth * 0.5;
+        const cy = viewHeight * 0.5;
+        return {
+          x: cx + rVec[0] * r,
+          y: cy - rVec[1] * r,
+          z: rVec[2], // > 0 means front hemisphere facing viewer
+          visible: rVec[2] > 0.02
+        };
+      }
+
+      // Extract rings from GeoJSON polygon/multipolygon features for fast 2D canvas projection
+      function extractVectorPolygons(features) {
+        const rings = [];
+        for (const feat of features) {
+          const geom = feat && feat.geometry;
+          if (!geom) continue;
+          const meta = findCountryForFeature(feat);
+          const props = feat.properties || {};
+          const labelName = meta ? meta.name : (props.NAME || props.ADMIN || props.name || 'Territory');
+          const polys = geom.type === 'Polygon'
+            ? [geom.coordinates]
+            : (geom.type === 'MultiPolygon' ? geom.coordinates : []);
+
+          for (const poly of polys) {
+            if (!poly || !poly[0]) continue;
+            // Subsample every 2nd vertex for ultra-fast 60fps mobile drawing while keeping crisp borders
+            const coords = poly[0];
+            const pts = [];
+            const step = coords.length > 180 ? 2 : 1;
+            for (let i = 0; i < coords.length; i += step) {
+              const [lon, lat] = coords[i];
+              if (typeof lon === 'number' && typeof lat === 'number') {
+                pts.push(latLngToUnitVec(lat, lon));
+              }
+            }
+            if (pts.length >= 3) {
+              rings.push({ pts, country: meta, name: labelName });
+            }
+          }
+        }
+        return rings;
+      }
+
+      // Draw crisp anti-aliased 3D sphere, lighting, graticules, landmass borders, and capital markers
+      function renderFrame() {
+        const cx = viewWidth * 0.5;
+        const cy = viewHeight * 0.5;
+        const r = globeRadius * camState.zoom;
+
+        ctx.clearRect(0, 0, viewWidth, viewHeight);
+
+        // Soft outer atmospheric glow
+        const atmoGrad = ctx.createRadialGradient(cx, cy, r * 0.96, cx, cy, r * 1.16);
+        atmoGrad.addColorStop(0, 'rgba(56, 189, 248, 0.24)');
+        atmoGrad.addColorStop(0.55, 'rgba(14, 165, 233, 0.08)');
+        atmoGrad.addColorStop(1, 'rgba(2, 6, 23, 0)');
+        ctx.fillStyle = atmoGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 1.16, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Clip to sphere interior for ocean, graticules, and country landmasses
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.clip();
+
+        // Base ocean shading with top-left specular/daylight gradient
+        const sphereGrad = ctx.createRadialGradient(
+          cx - r * 0.34,
+          cy - r * 0.34,
+          r * 0.08,
+          cx,
+          cy,
+          r * 1.04
+        );
+        sphereGrad.addColorStop(0, '#1d5fa3');
+        sphereGrad.addColorStop(0.45, '#0e3a6d');
+        sphereGrad.addColorStop(0.85, '#071d3a');
+        sphereGrad.addColorStop(1, '#030d1d');
+        ctx.fillStyle = sphereGrad;
+        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+
+        // Subtle latitude & longitude graticule lines
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.11)';
+        ctx.lineWidth = 1;
+        for (let lat = -75; lat <= 75; lat += 15) {
+          ctx.beginPath();
+          let started = false;
+          for (let lng = -180; lng <= 180; lng += 6) {
+            const p = projectUnitVec(latLngToUnitVec(lat, lng));
+            if (p.z > -0.05) {
+              if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+              else ctx.lineTo(p.x, p.y);
+            } else {
+              started = false;
+            }
+          }
+          ctx.stroke();
+        }
+        for (let lng = -180; lng < 180; lng += 15) {
+          ctx.beginPath();
+          let started = false;
+          for (let lat = -85; lat <= 85; lat += 5) {
+            const p = projectUnitVec(latLngToUnitVec(lat, lng));
+            if (p.z > -0.05) {
+              if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+              else ctx.lineTo(p.x, p.y);
+            } else {
+              started = false;
+            }
+          }
+          ctx.stroke();
+        }
+
+        // Draw landmass polygons & crisp country borders
+        for (let i = 0; i < vectorPolygons.length; i++) {
+          const poly = vectorPolygons[i];
+          const pts = poly.pts;
+          let anyFront = false;
+          const projectedPts = new Array(pts.length);
+
+          for (let j = 0; j < pts.length; j++) {
+            const p = projectUnitVec(pts[j]);
+            projectedPts[j] = p;
+            if (p.z > -0.08) anyFront = true;
+          }
+          if (!anyFront) continue;
+
+          const isSelected = state.selectedCountry && poly.country && poly.country.iso2 === state.selectedCountry.iso2;
+          const isHovered = hoveredCountry && poly.country && hoveredCountry.iso2 === poly.country.iso2;
+
+          ctx.beginPath();
+          let penDown = false;
+          for (let j = 0; j < projectedPts.length; j++) {
+            const p = projectedPts[j];
+            if (p.z > -0.08) {
+              if (!penDown) { ctx.moveTo(p.x, p.y); penDown = true; }
+              else ctx.lineTo(p.x, p.y);
+            } else {
+              penDown = false;
+            }
+          }
+
+          if (isSelected) {
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.45)';
+          } else if (isHovered) {
+            ctx.fillStyle = 'rgba(251, 191, 36, 0.34)';
+          } else {
+            ctx.fillStyle = 'rgba(30, 84, 138, 0.62)';
+          }
+          ctx.fill();
+
+          ctx.strokeStyle = isSelected
+            ? 'rgba(125, 211, 252, 0.95)'
+            : (isHovered ? 'rgba(253, 224, 71, 0.9)' : 'rgba(147, 197, 253, 0.46)');
+          ctx.lineWidth = isSelected || isHovered ? 1.5 : 0.85;
+          ctx.stroke();
+        }
+
+        // Subtle inner rim vignette on sphere edge
+        const rimGrad = ctx.createRadialGradient(cx, cy, r * 0.78, cx, cy, r);
+        rimGrad.addColorStop(0, 'rgba(2, 6, 23, 0)');
+        rimGrad.addColorStop(1, 'rgba(2, 6, 23, 0.55)');
+        ctx.fillStyle = rimGrad;
+        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+
+        ctx.restore();
+
+        // Crisp anti-aliased sphere outline
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.35)';
+        ctx.lineWidth = 1.25;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Pre-project all 197 capital anchor points once per frame
+        projectedCapitals = [];
+        if (state.showCapitals && state.countries.length > 0) {
+          for (let i = 0; i < state.countries.length; i++) {
+            const c = state.countries[i];
+            const p = projectUnitVec(c._unitVec);
+            if (p.visible) {
+              const isSelected = state.selectedCountry && state.selectedCountry.iso2 === c.iso2;
+              const isHovered = hoveredCountry && hoveredCountry.iso2 === c.iso2;
+              projectedCapitals.push({
+                country: c,
+                x: p.x,
+                y: p.y,
+                z: p.z,
+                isSelected,
+                isHovered,
+                priority: isSelected ? 1000 : (isHovered ? 900 : (p.z * 100 + (c.region === 'Oceania' ? 12 : 0)))
+              });
+            }
+          }
+
+          // Sort front-to-back / priority so important or selected capitals claim label space first
+          projectedCapitals.sort((a, b) => b.priority - a.priority);
+
+          // Draw capital dots first
+          for (let i = 0; i < projectedCapitals.length; i++) {
+            const item = projectedCapitals[i];
+            const dotRadius = item.isSelected ? 5.2 : (item.isHovered ? 4.4 : (camState.zoom > 1.6 ? 3.5 : 2.7));
+
+            ctx.beginPath();
+            ctx.arc(item.x, item.y, dotRadius, 0, Math.PI * 2);
+            ctx.fillStyle = item.isSelected ? '#38bdf8' : '#fbbf24';
+            ctx.fill();
+            ctx.lineWidth = 1.3;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+          }
+
+          // Adaptive non-overlapping capital label placement (skips heavy layout during active drag)
+          if (!state.isDragging) {
+            const placedBoxes = [];
+            const maxLabels = camState.zoom < 1.05 ? 28 : (camState.zoom < 1.65 ? 65 : 130);
+            const fontSize = camState.zoom > 1.7 ? 11 : 10;
+            ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+            ctx.textBaseline = 'middle';
+
+            let drawnLabels = 0;
+            for (let i = 0; i < projectedCapitals.length && drawnLabels < maxLabels; i++) {
+              const item = projectedCapitals[i];
+              // Skip edge-grazing labels when zoomed out unless selected/hovered
+              if (!item.isSelected && !item.isHovered && camState.zoom < 1.25 && item.z < 0.34) {
+                continue;
+              }
+
+              const text = item.country.capital;
+              const textWidth = ctx.measureText(text).width;
+              const padX = 5;
+              const boxW = textWidth + padX * 2;
+              const boxH = fontSize + 6;
+              const boxX = item.x + 7;
+              const boxY = item.y - boxH * 0.5;
+
+              // Stay inside viewport margins
+              if (boxX < 6 || boxX + boxW > viewWidth - 6 || boxY < 56 || boxY + boxH > viewHeight - 56) {
+                continue;
+              }
+
+              const overlaps = placedBoxes.some(b =>
+                boxX < b.x + b.w + 3 &&
+                boxX + boxW + 3 > b.x &&
+                boxY < b.y + b.h + 2 &&
+                boxY + boxH + 2 > b.y
+              );
+
+              if (overlaps && !item.isSelected && !item.isHovered) {
+                continue;
+              }
+
+              placedBoxes.push({ x: boxX, y: boxY, w: boxW, h: boxH });
+              drawnLabels++;
+
+              ctx.fillStyle = item.isSelected
+                ? 'rgba(12, 74, 110, 0.92)'
+                : 'rgba(2, 6, 23, 0.8)';
+              ctx.strokeStyle = item.isSelected
+                ? 'rgba(56, 189, 248, 0.85)'
+                : 'rgba(251, 191, 36, 0.38)';
+              ctx.lineWidth = 1;
+
+              ctx.beginPath();
+              if (ctx.roundRect) {
+                ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+              } else {
+                ctx.rect(boxX, boxY, boxW, boxH);
+              }
+              ctx.fill();
+              ctx.stroke();
+
+              ctx.fillStyle = item.isSelected ? '#e0f2fe' : '#fef3c7';
+              ctx.fillText(text, boxX + padX, item.y + 0.5);
+            }
+          }
+        }
+      }
+
+      // Process deferred hover/tap hit-testing cleanly outside pointermove
+      function processPointerSample() {
+        if (!latestPointerSample || state.isDragging) {
+          latestPointerSample = null;
+          return;
+        }
+
+        const sample = latestPointerSample;
+        latestPointerSample = null;
+
+        const r = globeRadius * camState.zoom;
+        const cx = viewWidth * 0.5;
+        const cy = viewHeight * 0.5;
+        const dx = sample.x - cx;
+        const dy = sample.y - cy;
+        const distSq = dx * dx + dy * dy;
+
+        // Check nearby capital pin first (generous touch/click radius)
+        let hitCountry = null;
+        let bestPinDistSq = sample.pointerType === 'touch' ? 24 * 24 : 15 * 15;
+        for (let i = 0; i < projectedCapitals.length; i++) {
+          const item = projectedCapitals[i];
+          const pdx = sample.x - item.x;
+          const pdy = sample.y - item.y;
+          const d2 = pdx * pdx + pdy * pdy;
+          if (d2 < bestPinDistSq) {
+            bestPinDistSq = d2;
+            hitCountry = item.country;
+          }
+        }
+
+        // Otherwise map screen point on sphere back to country nearest to that surface point
+        if (!hitCountry && distSq <= r * r) {
+          const nx = dx / r;
+          const ny = -dy / r;
+          const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+          const invQ = [camState.q[0], -camState.q[1], -camState.q[2], -camState.q[3]];
+          const worldVec = rotateVecByQuat([nx, ny, nz], invQ);
+
+          let bestDot = 0.94; // Within ~20 deg arc
+          for (let i = 0; i < state.countries.length; i++) {
+            const c = state.countries[i];
+            const u = c._unitVec;
+            const dot = worldVec[0] * u[0] + worldVec[1] * u[1] + worldVec[2] * u[2];
+            if (dot > bestDot) {
+              bestDot = dot;
+              hitCountry = c;
+            }
+          }
+        }
+
+        if (sample.hoverOnly && sample.pointerType === 'mouse') {
+          hoveredCountry = hitCountry;
+          canvas.style.cursor = hitCountry ? 'pointer' : 'grab';
+          if (hitCountry) {
+            tooltipCountry.textContent = `${getFlagEmoji(hitCountry.iso2)} ${hitCountry.name}`;
+            tooltipCapital.textContent = hitCountry.capital;
+            hoverTooltip.classList.remove('hidden');
+            const maxX = window.innerWidth - hoverTooltip.offsetWidth - 12;
+            const maxY = window.innerHeight - hoverTooltip.offsetHeight - 12;
+            hoverTooltip.style.left = `${Math.min(sample.x + 16, maxX)}px`;
+            hoverTooltip.style.top = `${Math.min(sample.y + 16, maxY)}px`;
+          } else {
+            hoverTooltip.classList.add('hidden');
+          }
+        }
+
+        if (sample.tap && hitCountry) {
+          selectCountry(hitCountry, true);
+        }
+      }
+
+      // Clamped delta-time physics + rendering loop (dt clamped to 0.05s)
+      let lastFrameTime = performance.now();
+      function loop(now) {
+        const rawDt = (now - lastFrameTime) / 1000;
+        lastFrameTime = now;
+        const dt = Math.min(0.05, Math.max(0.001, rawDt));
+
+        // 1. Camera fly-to interpolation using quaternion slerp
+        if (camState.flight) {
+          camState.flight.elapsed += dt;
+          const t = Math.min(1, camState.flight.elapsed / camState.flight.duration);
+          const ease = 1 - Math.pow(1 - t, 3);
+          camState.q = quatSlerp(camState.flight.startQ, camState.flight.endQ, ease);
+          camState.zoom = camState.flight.startZoom + (camState.flight.endZoom - camState.flight.startZoom) * ease;
+          camState.targetZoom = camState.zoom;
+          if (t >= 1) {
+            camState.flight = null;
+          }
+        } else {
+          // 2. Smooth zoom damping
+          camState.zoom += (camState.targetZoom - camState.zoom) * Math.min(1, dt * 14);
+
+          // 3. Inertial angular momentum & optional gentle auto-spin
+          if (!state.isDragging) {
+            const damping = Math.exp(-5.5 * dt);
+            camState.velYaw *= damping;
+            camState.velPitch *= damping;
+
+            let stepYaw = camState.velYaw * dt;
+            let stepPitch = camState.velPitch * dt;
+
+            if (state.autoRotate && Math.abs(camState.velYaw) < 0.02 && Math.abs(camState.velPitch) < 0.02) {
+              stepYaw += 0.14 * dt;
+            }
+
+            if (Math.abs(stepYaw) > 1e-6 || Math.abs(stepPitch) > 1e-6) {
+              applyAngularDelta(stepYaw, stepPitch);
+            }
+          }
+        }
+
+        // 4. Deferred hover/tap check & single-pass canvas render
+        processPointerSample();
+        renderFrame();
+
+        requestAnimationFrame(loop);
+      }
+
+      requestAnimationFrame(loop);
+
+      // Expose clean bridge methods so existing UI controls (search, flyTo, zoom, reset, GeoJSON load) work seamlessly
+      return {
+        setCountries(countries) {
+          for (let i = 0; i < countries.length; i++) {
+            countries[i]._unitVec = latLngToUnitVec(countries[i].lat, countries[i].lng);
+          }
+        },
+        setGeoJsonFeatures(features) {
+          vectorPolygons = extractVectorPolygons(features || []);
+        },
+        flyTo(lat, lng, altitude = 1.35, durationMs = 900) {
+          camState.velYaw = 0;
+          camState.velPitch = 0;
+          camState.flight = {
+            startQ: [...camState.q],
+            endQ: quatFromLatLng(lat, lng),
+            startZoom: camState.zoom,
+            endZoom: Math.max(0.75, Math.min(3.2, 2.2 / Math.max(0.5, altitude))),
+            elapsed: 0,
+            duration: Math.max(0.25, durationMs / 1000)
+          };
+        },
+        zoomBy(deltaZoom) {
+          stopFlight();
+          camState.targetZoom = Math.max(0.72, Math.min(3.4, camState.targetZoom + deltaZoom));
+        },
+        resetView() {
+          stopFlight();
+          camState.velYaw = 0;
+          camState.velPitch = 0;
+          camState.flight = {
+            startQ: [...camState.q],
+            endQ: quatFromLatLng(18, -35),
+            startZoom: camState.zoom,
+            endZoom: 1.0,
+            elapsed: 0,
+            duration: 0.85
+          };
+        }
+      };
+    }
+
+    const smoothGlobe = initSmoothQuaternionGlobe();
+    });
+    controls.addEventListener('end', () => {
+      if (state.autoRotate) {
+        controls.autoRotate = true;
+      }
+    });
+
+    // Zoom-responsive label visibility to prevent clutter when zoomed far out
+    controls.addEventListener('change', () => {
+      const pov = world.pointOfView();
+      const zoomedOutNow = (pov.altitude || 2.2) > 2.45;
+      if (zoomedOutNow !== state.isZoomedOut) {
+        state.isZoomedOut = zoomedOutNow;
+        document.querySelectorAll('.capital-pin').forEach(pin => {
+          pin.classList.toggle('zoomed-out', zoomedOutNow);
+        });
+      }
+    });
+
+    /**
+     * Extract best matching Country object for a GeoJSON feature (via ISO A2/A3 or Name)
+     */
+    function findCountryForFeature(feat) {
+      if (!feat) return null;
+      const props = feat.properties || {};
+
+      // 1. Match by ISO A2 or ISO A3 (Natural Earth GeoJSON properties)
+      const iso2 = (props.ISO_A2 && props.ISO_A2 !== '-99') ? props.ISO_A2.toUpperCase() : '';
+      const iso3 = (props.ISO_A3 && props.ISO_A3 !== '-99') ? props.ISO_A3.toUpperCase() :
+                   (props.ADM0_A3 ? props.ADM0_A3.toUpperCase() : '');
+
+      if (iso2) {
+        const matchIso2 = state.countries.find(c => c.iso2 === iso2);
+        if (matchIso2) return matchIso2;
+      }
+      if (iso3) {
+        const matchIso3 = state.countries.find(c => c.iso3 === iso3);
+        if (matchIso3) return matchIso3;
+      }
+
+      // 2. Match by normalized country name (Natural Earth NAME / ADMIN or World Atlas name)
+      const candidates = [props.NAME, props.ADMIN, props.NAME_LONG, props.name].filter(Boolean);
+      for (const raw of candidates) {
+        const canonKey = getCanonicalKey(raw);
+        const byName = state.countries.find(c => c.canonicalKey === canonKey);
+        if (byName) return byName;
+      }
+
+      return null;
+    }
+
+    /**
+     * Check if a GeoJSON feature matches the currently selected country
+     */
+    function isFeatureSelected(feat) {
+      if (!feat || !state.selectedCountry) return false;
+      const matched = findCountryForFeature(feat);
+      return matched && matched.iso2 === state.selectedCountry.iso2;
+    }
+
+    /**
+     * Create interactive HTML marker for each capital city (renders all 197 including microstates)
+     */
+    function createCapitalPinElement(country) {
+      const wrapper = document.createElement('div');
+      const isSelected = state.selectedCountry && state.selectedCountry.iso2 === country.iso2;
+      wrapper.className = `capital-pin ${isSelected ? 'is-selected' : ''}`;
+      wrapper.title = `${country.name} — Capital: ${country.capital}`;
+
+      const dot = document.createElement('span');
+      dot.className = `capital-dot ${isSelected ? 'selected' : ''}`;
+
+      const label = document.createElement('span');
+      label.className = `capital-label ${isSelected ? 'selected' : ''}`;
+      label.textContent = country.capital;
+
+      wrapper.appendChild(dot);
+      wrapper.appendChild(label);
+
+      // Clicking a capital pin selects that country and flies to it (only if not dragging)
+      wrapper.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (state.isDragging || !lastTapWasClean) return;
+        selectCountry(country, true);
+      });
+
+      return wrapper;
+    }
+
+    /**
+     * Handle hovering over any 3D country polygon (skipped during active drag for 60fps smoothness)
+     */
+    function handlePolygonHover(polygon) {
+      if (state.isDragging) return;
+      if (polygon === state.hoveredPolygon) return;
+
+      state.hoveredPolygon = polygon;
+      globeContainer.style.cursor = polygon ? 'pointer' : 'grab';
+
+      // Refresh polygon highlight only when hovered country actually changed
+      world
+        .polygonAltitude(world.polygonAltitude())
+        .polygonCapColor(world.polygonCapColor());
+
+      if (polygon) {
+        const meta = findCountryForFeature(polygon);
+        const props = polygon.properties || {};
+        const fallbackName = props.NAME || props.ADMIN || props.name || 'Territory';
+        const countryName = meta ? meta.name : fallbackName;
+        const capitalName = meta ? meta.capital : 'Territory / Special Region';
+
+        tooltipCountry.textContent = meta ? `${getFlagEmoji(meta.iso2)} ${countryName}` : countryName;
+        tooltipCapital.textContent = capitalName;
+        hoverTooltip.classList.remove('hidden');
+      } else {
+        hoverTooltip.classList.add('hidden');
+      }
+    }
+
+    /**
+     * Handle clicking on any 3D country polygon (ignores drag-release events)
+     */
+    function handlePolygonClick(polygon) {
+      if (!polygon || state.isDragging || !lastTapWasClean) return;
+      const meta = findCountryForFeature(polygon);
+      if (meta) {
+        selectCountry(meta, true);
+      } else {
+        const props = polygon.properties || {};
+        const fallbackName = props.NAME || props.ADMIN || props.name || 'Territory';
+        selectCountry({
+          name: fallbackName,
+          capital: 'Special Territory',
+          lat: 0,
+          lng: 0,
+          iso2: '',
+          iso3: '',
+          region: props.CONTINENT || 'World Territory',
+          canonicalKey: getCanonicalKey(fallbackName)
+        }, false);
+      }
+    }
+
+    /**
+     * Select a country, display its details card, and smoothly spin/fly the globe to its capital
+     */
+    function selectCountry(country, shouldFly = true) {
+      state.selectedCountry = country;
+
+      // Update detail card UI
+      document.getElementById('detail-flag').textContent = getFlagEmoji(country.iso2);
+      document.getElementById('detail-region').textContent = country.region || 'World';
+      document.getElementById('detail-country').textContent = country.name;
+      document.getElementById('detail-capital').textContent = country.capital || 'N/A';
+      document.getElementById('detail-iso').textContent = country.iso2 && country.iso3
+        ? `${country.iso2} / ${country.iso3}`
+        : (country.iso2 || 'N/A');
+
+      if (typeof country.lat === 'number' && typeof country.lng === 'number' && (country.lat !== 0 || country.lng !== 0)) {
+        const latDir = country.lat >= 0 ? 'N' : 'S';
+        const lngDir = country.lng >= 0 ? 'E' : 'W';
+        document.getElementById('detail-coords').textContent =
+          `${Math.abs(country.lat).toFixed(2)}° ${latDir}, ${Math.abs(country.lng).toFixed(2)}° ${lngDir}`;
+      } else {
+        document.getElementById('detail-coords').textContent = 'Coordinates unavailable';
+      }
+
+      // Reveal detail card smoothly
+      detailCard.classList.remove('translate-y-4', 'opacity-0', 'pointer-events-none');
+      detailCard.classList.add('translate-y-0', 'opacity-100', 'pointer-events-auto');
+
+      // Re-render polygons & pins so selected country/capital glows
+      if (world && typeof world.polygonAltitude === 'function') {
+        world
+          .polygonAltitude(world.polygonAltitude())
+          .polygonCapColor(world.polygonCapColor());
+
+        if (state.showCapitals) {
+          world.htmlElementsData([...state.countries]);
+        }
+      }
+
+      // Highlight selected country in directory list if open
+      renderDirectoryList();
+
+      // Smoothly rotate & zoom camera to the country's capital
+      if (shouldFly && typeof country.lat === 'number' && typeof country.lng === 'number') {
+        state.autoRotate = false;
+        controls.autoRotate = false;
+        updateRotateButtonUI();
+
+        smoothGlobe.flyTo(country.lat, country.lng, 1.35, 900);
+      }
+    }
+
+    /**
+     * Handle clicking on any 3D country polygon
+     */
+    function handlePolygonClick(polygon) {
+      if (!polygon) return;
+      const meta = findCountryForFeature(polygon);
+      if (meta) {
+        selectCountry(meta, true);
+      } else {
+        const props = polygon.properties || {};
+        const fallbackName = props.NAME || props.ADMIN || props.name || 'Territory';
+        selectCountry({
+          name: fallbackName,
+          capital: 'Special Territory',
+          lat: 0,
+          lng: 0,
+          iso2: '',
+          iso3: '',
+          region: props.CONTINENT || 'World Territory',
+          canonicalKey: getCanonicalKey(fallbackName)
+        }, false);
+      }
+    }
+
+    /**
+     * Select a country, display its details card, and smoothly spin/fly the globe to its capital
+     */
+    function selectCountry(country, shouldFly = true) {
+      state.selectedCountry = country;
+
+      // Update detail card UI
+      document.getElementById('detail-flag').textContent = getFlagEmoji(country.iso2);
+      document.getElementById('detail-region').textContent = country.region || 'World';
+      document.getElementById('detail-country').textContent = country.name;
+      document.getElementById('detail-capital').textContent = country.capital || 'N/A';
+      document.getElementById('detail-iso').textContent = country.iso2 && country.iso3
+        ? `${country.iso2} / ${country.iso3}`
+        : (country.iso2 || 'N/A');
+
+      if (typeof country.lat === 'number' && typeof country.lng === 'number' && (country.lat !== 0 || country.lng !== 0)) {
+        const latDir = country.lat >= 0 ? 'N' : 'S';
+        const lngDir = country.lng >= 0 ? 'E' : 'W';
+        document.getElementById('detail-coords').textContent =
+          `${Math.abs(country.lat).toFixed(2)}° ${latDir}, ${Math.abs(country.lng).toFixed(2)}° ${lngDir}`;
+      } else {
+        document.getElementById('detail-coords').textContent = 'Coordinates unavailable';
+      }
+
+      // Reveal detail card smoothly
+      detailCard.classList.remove('translate-y-4', 'opacity-0', 'pointer-events-none');
+      detailCard.classList.add('translate-y-0', 'opacity-100', 'pointer-events-auto');
+
+      // Re-render polygons & pins so selected country/capital glows
+      world
+        .polygonAltitude(world.polygonAltitude())
+        .polygonCapColor(world.polygonCapColor());
+
+      if (state.showCapitals) {
+        world.htmlElementsData([...state.countries]);
+      }
+
+      // Highlight selected country in directory list if open
+      renderDirectoryList();
+
+      // Smoothly rotate & zoom camera to the country's capital
+      if (shouldFly && typeof country.lat === 'number' && typeof country.lng === 'number') {
+        state.autoRotate = false;
+        controls.autoRotate = false;
+        updateRotateButtonUI();
+
+        world.pointOfView({
+          lat: country.lat,
+          lng: country.lng,
+          altitude: 1.35
+        }, 1150);
+      }
+    }
+
+    /**
+     * Render the Alphabetical All-Countries Directory Drawer
+     */
+    function renderDirectoryList() {
+      const filtered = state.activeRegion === 'All'
+        ? state.countries
+        : state.countries.filter(c => c.region === state.activeRegion);
+
+      document.getElementById('directory-subtitle').textContent =
+        `${filtered.length} ${state.activeRegion === 'All' ? 'Countries & Territories' : state.activeRegion + ' Countries'} (A–Z)`;
+
+      directoryList.innerHTML = filtered.map(country => {
+        const isSelected = state.selectedCountry && state.selectedCountry.iso2 === country.iso2;
+        return `
+          <button
+            type="button"
+            data-iso2="${country.iso2}"
+            class="dir-item w-full text-left px-3.5 py-2.5 transition flex items-center justify-between gap-2 ${
+              isSelected ? 'bg-sky-500/25 border-l-2 border-sky-400' : 'hover:bg-slate-800/75'
+            }"
+          >
+            <div class="flex items-center gap-2.5 min-w-0">
+              <span class="text-base shrink-0">${getFlagEmoji(country.iso2)}</span>
+              <div class="truncate">
+                <div class="text-xs sm:text-sm font-semibold text-white truncate">${country.name}</div>
+                <div class="text-[11px] text-amber-300 truncate">Capital: ${country.capital}</div>
+              </div>
+            </div>
+            <span class="text-[10px] font-mono text-slate-400 shrink-0">${country.iso3}</span>
+          </button>
+        `;
+      }).join('');
+
+  directoryList.querySelectorAll('.dir-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const iso2 = btn.getAttribute('data-iso2');
+          const found = state.countries.find(c => c.iso2 === iso2);
+          if (found) {
+            selectCountry(found, true);
+            // Auto-close drawer on mobile screens so globe is clearly visible
+            if (window.innerWidth < 640) {
+              toggleDirectoryDrawer(false);
+            }
+          }
+        });
+      });
+    }
+
+    /**
+     * Open or close the All-Countries Directory Drawer
+     */
+    function toggleDirectoryDrawer(forceState) {
+      const isOpen = !directoryDrawer.classList.contains('opacity-0');
+      const nextState = typeof forceState === 'boolean' ? forceState : !isOpen;
+
+      if (nextState) {
+        directoryDrawer.classList.remove('translate-x-[115%]', 'opacity-0', 'pointer-events-none');
+        directoryDrawer.classList.add('translate-x-0', 'opacity-100', 'pointer-events-auto');
+      } else {
+        directoryDrawer.classList.add('translate-x-[115%]', 'opacity-0', 'pointer-events-none');
+        directoryDrawer.classList.remove('translate-x-0', 'opacity-100', 'pointer-events-auto');
+      }
+    }
+
+    /**
+     * Initialize All 197 Countries immediately + Fetch Country Border Polygons
+     */
+    async function initWorldData() {
+      // 1. Load all 197 countries & capitals immediately from embedded dataset
+      state.countries = buildCompleteCountryDataset();
+      smoothGlobe.setCountries(state.countries);
+      document.getElementById('country-count-badge').textContent = `${state.countries.length} Countries`;
+      renderDirectoryList();
+
+      // Dismiss loading overlay immediately once 197 countries are ready
+      loadingOverlay.classList.add('opacity-0');
+      setTimeout(() => {
+        loadingOverlay.style.display = 'none';
+      }, 250);
+
+      // 2. Fetch country border polygons (Natural Earth GeoJSON primary, World Atlas TopoJSON fallback)
+      try {
+        let features = [];
+        try {
+          const neRes = await fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson');
+          if (!neRes.ok) throw new Error('Natural Earth GeoJSON unavailable');
+          const neData = await neRes.json();
+          features = neData.features || [];
+        } catch (primaryErr) {
+          const topoRes = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+          if (!topoRes.ok) throw new Error('World Atlas TopoJSON unavailable');
+          const worldTopo = await topoRes.json();
+          const geoJson = topojson.feature(worldTopo, worldTopo.objects.countries);
+          features = geoJson.features || [];
+        }
+
+        state.polygons = features;
+        smoothGlobe.setGeoJsonFeatures(state.polygons);
+
+      } catch (err) {
+        console.warn('Border polygon fetch fallback:', err);
+        showMessage('All 197 countries & capitals loaded! (Country border outlines offline)');
+      }
+    }
+
+    /**
+     * Live Search Filtering across all 197 Countries & Capitals
+     */
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.trim().toLowerCase();
+      clearSearchBtn.classList.toggle('hidden', query.length === 0);
+
+      if (!query) {
+        searchResults.classList.add('hidden');
+        searchResults.innerHTML = '';
+        return;
+      }
+
+      // Prioritize prefix matches first, then substring matches
+      const startsWithMatches = [];
+      const containsMatches = [];
+
+      state.countries.forEach(c => {
+        const cName = c.name.toLowerCase();
+        const capName = c.capital.toLowerCase();
+        const iso2 = c.iso2.toLowerCase();
+        const iso3 = c.iso3.toLowerCase();
+
+        if (cName.startsWith(query) || capName.startsWith(query) || iso2 === query || iso3 === query) {
+          startsWithMatches.push(c);
+        } else if (cName.includes(query) || capName.includes(query) || c.region.toLowerCase().includes(query)) {
+          containsMatches.push(c);
+        }
+      });
+
+      const matches = [...startsWithMatches, ...containsMatches].slice(0, 15);
+
+      if (matches.length === 0) {
+        searchResults.innerHTML = `
+          <div class="px-4 py-3 text-xs text-slate-400 text-center">
+            No matching country or capital found for "${searchInput.value}"
+          </div>
+        `;
+        searchResults.classList.remove('hidden');
+        return;
+      }
+
+      searchResults.innerHTML = matches.map((country, idx) => `
+        <button
+          type="button"
+          data-idx="${idx}"
+          class="search-item w-full text-left px-4 py-2.5 hover:bg-sky-500/20 transition flex items-center justify-between gap-2"
+        >
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="text-lg shrink-0">${getFlagEmoji(country.iso2)}</span>
+            <div class="truncate">
+              <div class="text-sm font-semibold text-white truncate">${country.name}</div>
+              <div class="text-xs text-amber-300 truncate">Capital: ${country.capital}</div>
+            </div>
+          </div>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 shrink-0">
+            ${country.region}
+          </span>
+        </button>
+      `).join('');
+
+      // Attach click handlers to search results
+      searchResults.querySelectorAll('.search-item').forEach((btn, idx) => {
+        btn.addEventListener('click', () => {
+          const chosen = matches[idx];
+          selectCountry(chosen, true);
+          searchInput.value = `${chosen.name} — ${chosen.capital}`;
+          searchResults.classList.add('hidden');
+        });
+      });
+
+      searchResults.classList.remove('hidden');
+    });
+
+    // Clear search bar
+    clearSearchBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      clearSearchBtn.classList.add('hidden');
+      searchResults.classList.add('hidden');
+      searchInput.focus();
+    });
+
+    // Close search dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+        searchResults.classList.add('hidden');
+      }
+    });
+
+    // Directory Drawer Listeners
+    document.getElementById('toggle-directory-btn').addEventListener('click', () => toggleDirectoryDrawer());
+    document.getElementById('mobile-dir-btn').addEventListener('click', () => toggleDirectoryDrawer());
+    document.getElementById('close-directory-btn').addEventListener('click', () => toggleDirectoryDrawer(false));
+
+    // Region filter pills inside Directory Drawer
+    document.querySelectorAll('.region-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        state.activeRegion = pill.getAttribute('data-region');
+        document.querySelectorAll('.region-pill').forEach(p => {
+          p.classList.remove('bg-sky-500/25', 'text-sky-300', 'border', 'border-sky-400/40', 'font-semibold');
+          p.classList.add('bg-slate-800/70', 'text-slate-300', 'font-medium');
+        });
+        pill.classList.remove('bg-slate-800/70', 'text-slate-300', 'font-medium');
+        pill.classList.add('bg-sky-500/25', 'text-sky-300', 'border', 'border-sky-400/40', 'font-semibold');
+        renderDirectoryList();
+      });
+    });
+
+    /**
+     * UI Control Buttons Logic
+     */
+    function updateRotateButtonUI() {
+      const label = document.getElementById('rotate-label');
+      const btn = document.getElementById('toggle-rotate-btn');
+      if (state.autoRotate) {
+        label.textContent = 'Auto-Spin: On';
+        btn.classList.add('bg-sky-500/20', 'text-sky-300', 'border-sky-400/30');
+        btn.classList.remove('bg-slate-800/80', 'text-slate-400', 'border-slate-700');
+      } else {
+        label.textContent = 'Auto-Spin: Off';
+        btn.classList.remove('bg-sky-500/20', 'text-sky-300', 'border-sky-400/30');
+        btn.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700');
+      }
+    }
+
+    function toggleAutoRotate() {
+      state.autoRotate = !state.autoRotate;
+      controls.autoRotate = state.autoRotate;
+      updateRotateButtonUI();
+    }
+
+    document.getElementById('toggle-rotate-btn').addEventListener('click', toggleAutoRotate);
+
+    // Toggle capital pins visibility
+    document.getElementById('toggle-labels-btn').addEventListener('click', () => {
+      state.showCapitals = !state.showCapitals;
+      const label = document.getElementById('labels-label');
+      const btn = document.getElementById('toggle-labels-btn');
+
+      if (state.showCapitals) {
+        label.textContent = 'Capitals: On';
+        btn.classList.add('bg-amber-500/20', 'text-amber-300', 'border-amber-400/30');
+        btn.classList.remove('bg-slate-800/80', 'text-slate-400', 'border-slate-700');
+        if (world && typeof world.htmlElementsData === 'function') world.htmlElementsData(state.countries);
+      } else {
+        label.textContent = 'Capitals: Off';
+        btn.classList.remove('bg-amber-500/20', 'text-amber-300', 'border-amber-400/30');
+        btn.classList.add('bg-slate-800/80', 'text-slate-400', 'border-slate-700');
+        if (world && typeof world.htmlElementsData === 'function') world.htmlElementsData([]);
+      }
+    });
+
+    // Zoom In Button
+    document.getElementById('zoom-in-btn').addEventListener('click', () => {
+      smoothGlobe.zoomBy(0.35);
+    });
+
+    // Zoom Out Button
+    document.getElementById('zoom-out-btn').addEventListener('click', () => {
+      smoothGlobe.zoomBy(-0.35);
+    });
+
+    // Reset Global View Button
+    document.getElementById('reset-view-btn').addEventListener('click', () => {
+      state.selectedCountry = null;
+      detailCard.classList.add('translate-y-4', 'opacity-0', 'pointer-events-none');
+      detailCard.classList.remove('translate-y-0', 'opacity-100', 'pointer-events-auto');
+
+      if (world && typeof world.polygonAltitude === 'function') {
+        world
+          .polygonAltitude(world.polygonAltitude())
+          .polygonCapColor(world.polygonCapColor());
+
+        if (state.showCapitals) {
+          world.htmlElementsData([...state.countries]);
+        }
+      }
+      renderDirectoryList();
+
+      state.autoRotate = true;
+      controls.autoRotate = true;
+      updateRotateButtonUI();
+
+      smoothGlobe.resetView();
+    });
+
+    // Close detail card
+    document.getElementById('close-detail-btn').addEventListener('click', () => {
+      detailCard.classList.add('translate-y-4', 'opacity-0', 'pointer-events-none');
+      detailCard.classList.remove('translate-y-0', 'opacity-100', 'pointer-events-auto');
+    });
+
+    // Center view back on currently selected country
+    document.getElementById('fly-again-btn').addEventListener('click', () => {
+      if (state.selectedCountry) {
+        selectCountry(state.selectedCountry, true);
+      }
+    });
+
+    // Handle responsive window resizing
+    window.addEventListener('resize', () => {
+      if (world && typeof world.width === 'function') {
+        world.width(window.innerWidth);
+        world.height(window.innerHeight);
+      }
+    });
+
+    // Start loading world borders & capitals on window load
+    window.onload = () => {
+      if (world && typeof world.width === 'function') {
+        world.width(window.innerWidth);
+        world.height(window.innerHeight);
+      }
+      initWorldData();
+    };
+  </script>
+</body>
+</html>
