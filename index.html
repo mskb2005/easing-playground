@@ -3,101 +3,106 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MOTIONIC - Feel Motion</title>
+<title>MOTIONIC DETECTOR</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
-body{background:#0a0a12;color:white;overflow-x:hidden}
-nav{display:flex;justify-content:space-between;padding:20px 24px;position:fixed;width:100%;z-index:10;backdrop-filter:blur(10px)}
-.logo{font-weight:900;letter-spacing:2px;font-size:22px}
-.logo span{color:#a78bfa}
-.btn{background:white;color:black;padding:10px 18px;border-radius:999px;font-weight:700;border:none;cursor:pointer}
-.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:24px;text-align:center;background:radial-gradient(600px 300px at var(--x,50%) var(--y,30%),#7c3aed55,transparent)}
-.hero h1{font-size:clamp(48px,12vw,110px);line-height:0.9;font-weight:900;letter-spacing:-3px}
-.hero h1 i{color:#a78bfa;font-style:normal}
-.hero p{opacity:.7;margin:18px auto;max-width:520px;font-size:18px}
-.pill{display:inline-block;background:#1e1e2e;border:1px solid #333;padding:8px 14px;border-radius:999px;font-size:13px;margin:4px}
-.playground{padding:40px 20px;max-width:900px;margin:auto}
-.card{background:#15151f;border:1px solid #2a2a3a;border-radius:24px;padding:24px;margin-top:20px;transition:transform .3s}
-.card:hover{transform:translateY(-6px) rotate(-0.5deg)}
-.track{height:120px;background:#0a0a12;border-radius:16px;position:relative;overflow:hidden;margin:20px 0;border:1px dashed #333}
-#ball{width:56px;height:56px;background:linear-gradient(135deg,#a78bfa,#ec4899);border-radius:50%;position:absolute;top:32px;left:10px;display:grid;place-items:center;font-size:26px;box-shadow:0 10px 30px #a78bfa66}
-.controls{display:flex;flex-wrap:wrap;gap:10px}
-select,input{padding:12px;border-radius:12px;background:#0a0a12;color:white;border:1px solid #333;flex:1}
-.marquee{white-space:nowrap;overflow:hidden;padding:20px 0;border-top:1px solid #222;border-bottom:1px solid #222;margin:40px 0}
-.marquee span{display:inline-block;animation:scroll 12s linear infinite;font-size:28px;font-weight:800;padding-right:20px}
-@keyframes scroll{to{transform:translateX(-50%)}}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
-.mini{padding:20px;border-radius:20px;background:#1c1c2a;border:1px solid #2a2a3a}
-.mini b{font-size:28px}
-footer{text-align:center;padding:40px;opacity:.5}
+*{margin:0;padding:0;box-sizing:border-box;font-family:Arial,sans-serif}
+body{background:#020617;color:white;padding:14px;text-align:center}
+h1{font-size:26px;letter-spacing:2px} h1 span{color:#22d3ee}
+.sub{color:#94a3b8;font-size:13px;margin:4px 0 12px}
+.box{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:14px;margin-bottom:12px}
+#stage{height:180px;background:#0f172a;border-radius:12px;position:relative;overflow:hidden;border:2px dashed #475569}
+#ball{position:absolute;left:50%;top:60px;width:60px;height:60px;margin-left:-30px;background:#22d3ee;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;box-shadow:0 0 30px #22d3ee;transition:all .2s}
+.row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:12px}
+.card{background:#0f172a;border-radius:12px;padding:10px}
+.card b{font-size:22px;display:block}
+.card span{font-size:11px;color:#94a3b8}
+.bar{height:10px;background:#334155;border-radius:10px;margin-top:8px;overflow:hidden}
+#soundBar,#moveBar{height:100%;width:0%;background:#22d3ee}
+#shakeBar{height:100%;width:0%;background:#facc15}
+button{width:100%;padding:14px;background:#22d3ee;border:none;border-radius:12px;font-size:16px;font-weight:bold;color:#020617;margin-top:10px}
+video{width:100%;border-radius:12px;background:black;margin-top:10px}
+.note{font-size:12px;color:#94a3b8;line-height:1.6}
 </style>
 </head>
 <body>
-<nav><div class="logo">MOTION<span>IC</span></div><button class="btn" onclick="play()">▶ Play Motion</button></nav>
+<h1>MOTIONIC <span>DETECTOR</span> 👁️</h1>
+<p class="sub">It sees you. It hears you. It feels your shake.</p>
 
-<div class="hero" id="hero">
-<div><span class="pill">✦ CLEVER MOTION</span><span class="pill">NO LIBRARY • JUST CSS + JS</span></div>
-<h1>MOTION<br><i>THAT FEELS</i><br>ALIVE.</h1>
-<p>Move your mouse. Click play. Change the easing. This is not just animation — this is feeling.</p>
-<div><button class="btn" onclick="play()">Try it ↓</button></div>
+<div class="box">
+<div id="stage"><div id="ball">👁️</div></div>
+<div class="row">
+<div class="card"><b id="moveVal">0%</b><span>✋ MOVEMENT</span><div class="bar"><div id="moveBar"></div></div></div>
+<div class="card"><b id="soundVal">0</b><span>🔊 SOUND</span><div class="bar"><div id="soundBar"></div></div></div>
+<div class="card"><b id="shakeVal">0</b><span>📱 SHAKE</span><div class="bar"><div id="shakeBar"></div></div></div>
+</div>
+<button onclick="start()">▶ START DETECTING</button>
+<p class="note" id="status">Tap START, then Allow Camera + Mic.<br>Move your hand, clap, shake phone.</p>
 </div>
 
-<div class="marquee"><span>MOTIONIC • EASE-IN • BOUNCE • SPRING • SMOOTH • PLAYFUL • MOTIONIC • EASE-IN • BOUNCE • SPRING • SMOOTH • PLAYFUL • </span></div>
-
-<div class="playground">
-<h2 style="font-size:36px">Easing Playground 🎢</h2>
-<p style="opacity:.7;margin-top:8px">The secret of Apple, Google, Netflix — it's not what moves, it's HOW it moves.</p>
-
-<div class="card">
-<div class="track"><div id="ball">✦</div></div>
-<div class="controls">
-<select id="ease">
-<option value="linear">linear - robot</option>
-<option value="ease-in">ease-in - slow start</option>
-<option value="ease-out" selected>ease-out - smooth stop</option>
-<option value="ease-in-out">ease-in-out - luxury</option>
-<option value="cubic-bezier(.68,-0.55,.27,1.55)">springy - playful</option>
-<option value="cubic-bezier(.17,.67,.35,1.5)">bounce - fun</option>
-</select>
-<input type="range" id="dur" min="300" max="2000" value="900"><span id="durLabel">900ms</span>
-<button class="btn" onclick="play()">▶ Run</button>
+<div class="box">
+<p style="font-size:13px;text-align:left">📷 <b>YOUR CAMERA</b> — this is what detector sees</p>
+<video id="video" autoplay playsinline muted></video>
+<p class="note">Try: Wave hand = Ball moves left/right. Clap = Ball grows. Shake phone = Ball jumps.</p>
 </div>
-<p id="code" style="margin-top:14px;background:#000;padding:12px;border-radius:12px;font-family:monospace">transition: left 900ms ease-out;</p>
-</div>
-
-<div class="grid">
-<div class="mini"><b>⚡ Fast</b><p style="opacity:.7">Linear feels fast but cheap. Good for loading bars.</p></div>
-<div class="mini"><b>🧈 Smooth</b><p style="opacity:.7">Ease-out feels premium. Apple uses this everywhere.</p></div>
-<div class="mini"><b>🏀 Bouncy</b><p style="opacity:.7">Spring feels playful. Good for games & kids apps.</p></div>
-<div class="mini"><b>💎 Luxury</b><p style="opacity:.7">Ease-in-out feels expensive. Good for hero sections.</p></div>
-</div>
-</div>
-
-<footer>Built by you • MOTIONIC • Move your mouse on this page</footer>
 
 <script>
-const ball=document.getElementById('ball');
-const hero=document.getElementById('hero');
-const dur=document.getElementById('dur');
-const durLabel=document.getElementById('durLabel');
-const ease=document.getElementById('ease');
-const code=document.getElementById('code');
-dur.oninput=()=>{durLabel.textContent=dur.value+'ms'; updateCode()}
-ease.onchange=updateCode
-function updateCode(){code.textContent=`transition: left ${dur.value}ms ${ease.value};`}
-function play(){
-  ball.style.transition='none';
-  ball.style.left='10px';
-  setTimeout(()=>{
-    ball.style.transition=`left ${dur.value}ms ${ease.value}`;
-    ball.style.left='calc(100% - 66px)';
-  },50);
+let ball=document.getElementById('ball'), video=document.getElementById('video');
+let canvas=document.createElement('canvas'), ctx=canvas.getContext('2d');
+let prev=null, started=false;
+async function start(){
+  document.getElementById('status').textContent='Starting... Allow Camera + Mic...';
+  try{
+    let stream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+    video.srcObject=stream;
+    video.onloadedmetadata=()=>{canvas.width=80;canvas.height=60; setInterval(detectMove,100);};
+    // Sound
+    let audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    let src=audioCtx.createMediaStreamSource(stream);
+    let analyser=audioCtx.createAnalyser(); analyser.fftSize=256; src.connect(analyser);
+    let data=new Uint8Array(analyser.frequencyBinCount);
+    setInterval(()=>{
+      analyser.getByteFrequencyData(data);
+      let avg=data.reduce((a,b)=>a+b,0)/data.length;
+      document.getElementById('soundVal').textContent=Math.round(avg);
+      document.getElementById('soundBar').style.width=Math.min(100,avg)+'%';
+      if(avg>45){ball.style.transform='scale(1.5)'; ball.textContent='😮'; ball.style.background='#facc15';}
+      else{ball.style.transform='scale(1)'; ball.textContent='👁️'; ball.style.background='#22d3ee';}
+    },100);
+    // Shake
+    if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){
+      await DeviceMotionEvent.requestPermission();
+    }
+    window.addEventListener('devicemotion',(e)=>{
+      let a=e.accelerationIncludingGravity; if(!a) return;
+      let shake=Math.abs(a.x)+Math.abs(a.y)-15;
+      if(shake>8){
+        document.getElementById('shakeVal').textContent=Math.round(shake);
+        document.getElementById('shakeBar').style.width=Math.min(100,shake*3)+'%';
+        ball.style.top='10px'; setTimeout(()=>ball.style.top='60px',300);
+      }
+    });
+    document.getElementById('status').textContent='✅ DETECTING! Wave, Clap, Shake!';
+    started=true;
+  }catch(e){ document.getElementById('status').textContent='❌ Need to Allow Camera + Mic. Refresh and try again.'; }
 }
-document.addEventListener('mousemove',e=>{
-  hero.style.setProperty('--x', (e.clientX/window.innerWidth*100)+'%');
-  hero.style.setProperty('--y', (e.clientY/window.innerHeight*100)+'%');
-});
-updateCode(); play();
+function detectMove(){
+  if(!started) return;
+  ctx.drawImage(video,0,0,80,60);
+  let frame=ctx.getImageData(0,0,80,60).data;
+  if(prev){
+    let diff=0, left=0, right=0;
+    for(let i=0;i<frame.length;i+=4){
+      let d=Math.abs(frame[i]-prev[i]);
+      if(d>30){ diff++; let x=(i/4)%80; if(x<40) left++; else right++; }
+    }
+    let pct=Math.min(100, Math.round(diff/30));
+    document.getElementById('moveVal').textContent=pct+'%';
+    document.getElementById('moveBar').style.width=pct+'%';
+    if(left>right+20) ball.style.left='15%';
+    else if(right>left+20) ball.style.left='75%';
+  }
+  prev=frame.slice();
+}
 </script>
 </body>
 </html>
